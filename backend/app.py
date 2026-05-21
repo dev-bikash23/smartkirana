@@ -763,7 +763,10 @@ def get_trending(current_user: dict = Depends(get_current_user), db: Session = D
 
 @app.post("/apply-discounts")
 def apply_discounts(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """AI-powered auto-discount: analyze current user's inventory and apply tiered discounts."""
+    """AI-powered auto-discount: factors both overstock ratio AND demand (days remaining).
+    Products selling fast are NEVER discounted — only truly slow-moving excess stock gets marked down.
+    Tiers: 15% → 30% → 50% → 70% based on severity.
+    """
     items = db.query(InventoryItemDB).filter(InventoryItemDB.user_id == current_user["id"]).all()
     applied_to = []
 
@@ -771,23 +774,36 @@ def apply_discounts(current_user: dict = Depends(get_current_user), db: Session 
         min_s = it.minStock if it.minStock > 0 else 5
         ratio = it.stock / min_s if min_s > 0 else 0
 
+        # Estimate avg daily sales from minStock (demand proxy)
+        avg_daily_sale = max(1, round(min_s * 0.7))
+        days_remaining = it.stock // avg_daily_sale if avg_daily_sale > 0 else 999
+
         if it.stock <= 0:
-            # Clear any existing discount for out-of-stock
             it.discount_pct = 0.0
             it.discount_reason = ""
             continue
 
-        if ratio >= 10:
+        # If stock will run out in < 20 days — selling fast, NO discount needed
+        if days_remaining < 20:
+            it.discount_pct = 0.0
+            it.discount_reason = ""
+            continue
+
+        # Apply discount only when BOTH overstock ratio AND low demand confirm excess
+        if ratio >= 8 and days_remaining >= 60:
             pct = 70.0
-            reason = "Severe overstock — clearance pricing"
-        elif ratio >= 6:
+            reason = f"Severe overstock — {days_remaining} days of stock left, very low demand"
+        elif ratio >= 5 and days_remaining >= 45:
             pct = 50.0
-            reason = "High overstock — heavy discount applied"
-        elif ratio >= 3 and it.stock > 50:
+            reason = f"High overstock — {days_remaining} days of stock left, slow moving"
+        elif ratio >= 3 and days_remaining >= 30:
             pct = 30.0
-            reason = "Moderate overstock — promotional discount"
+            reason = f"Moderate overstock — {days_remaining} days of stock left"
+        elif ratio >= 2 and days_remaining >= 20:
+            pct = 15.0
+            reason = f"Slight overstock — {days_remaining} days of stock left"
         else:
-            # Well-stocked or low-stock — no discount
+            # Well-stocked or fast-moving — no discount
             it.discount_pct = 0.0
             it.discount_reason = ""
             continue
@@ -800,4 +816,10 @@ def apply_discounts(current_user: dict = Depends(get_current_user), db: Session 
     return {
         "message": f"AI discounts applied to {len(applied_to)} products.",
         "applied_to": applied_to,
+        "summary": {
+            "70_pct": sum(1 for x in applied_to if x["discount_pct"] == 70.0),
+            "50_pct": sum(1 for x in applied_to if x["discount_pct"] == 50.0),
+            "30_pct": sum(1 for x in applied_to if x["discount_pct"] == 30.0),
+            "15_pct": sum(1 for x in applied_to if x["discount_pct"] == 15.0),
+        }
     }
