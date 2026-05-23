@@ -635,7 +635,9 @@ def scan_product(payload: ScanPayload, current_user: dict = Depends(get_current_
 # --- Orders -----------------------------------------------------------------
 @app.post("/orders")
 def create_order(req: CreateOrderRequest, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Create an order from a list of {product_id, quantity} and decrement stock."""
+    """Create an order from a list of {product_id, quantity} and decrement stock.
+    Uses discounted price (if any active discount) as the actual selling price.
+    """
     order_items_data = []
     total_amount = 0.0
     total_profit = 0.0
@@ -645,11 +647,18 @@ def create_order(req: CreateOrderRequest, current_user: dict = Depends(get_curre
             raise HTTPException(status_code=404, detail=f"Product {entry.product_id} not found.")
         if item.stock < entry.quantity:
             raise HTTPException(status_code=400, detail=f"Insufficient stock for '{item.name}'.")
-        subtotal = item.price * entry.quantity
+        # Apply active discount to selling price
+        discount_pct = _safe_get(item, "discount_pct", 0.0) or 0.0
+        effective_price = round(item.price * (1 - discount_pct / 100), 2)
+        subtotal = round(effective_price * entry.quantity, 2)
         profit_rate = _safe_get(item, "profit_rate", 10.0)
         profit = round(subtotal * profit_rate / 100, 2)
-        order_items_data.append({"item": item, "quantity": entry.quantity,
-                                  "subtotal": subtotal, "profit": profit, "profit_rate": profit_rate})
+        order_items_data.append({
+            "item": item, "quantity": entry.quantity,
+            "subtotal": subtotal, "profit": profit,
+            "profit_rate": profit_rate, "effective_price": effective_price,
+            "discount_pct": discount_pct,
+        })
         total_amount += subtotal
         total_profit += profit
 
@@ -662,15 +671,24 @@ def create_order(req: CreateOrderRequest, current_user: dict = Depends(get_curre
 
     for od in order_items_data:
         it = od["item"]
-        db.add(OrderItemDB(order_id=order.id, product_id=it.id, product_name=it.name,
-                            quantity=od["quantity"], unit_price=it.price,
-                            profit_rate=od["profit_rate"],
-                            subtotal=od["subtotal"], profit=od["profit"]))
+        db.add(OrderItemDB(
+            order_id=order.id, product_id=it.id, product_name=it.name,
+            quantity=od["quantity"],
+            unit_price=od["effective_price"],   # actual selling price (after discount)
+            profit_rate=od["profit_rate"],
+            subtotal=od["subtotal"], profit=od["profit"],
+        ))
         it.stock = max(0, it.stock - od["quantity"])
 
     db.commit(); db.refresh(order)
-    return {"message": "Order created", "order_id": order.id,
-            "total_amount": order.total_amount, "total_profit": order.total_profit}
+    return {
+        "message": "Order created", "order_id": order.id,
+        "total_amount": order.total_amount, "total_profit": order.total_profit,
+        "discount_savings": round(sum(
+            (od["item"].price - od["effective_price"]) * od["quantity"]
+            for od in order_items_data
+        ), 2),
+    }
 
 @app.get("/orders")
 def list_orders(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -761,34 +779,40 @@ def logout():
 # ===========================================================================
 
 # Discount tier names and configurations
+# velocity_multiplier: how much faster stock sells with this discount applied
+# min_duration / max_duration: clamp the auto-calculated sale duration (days)
 DISCOUNT_TIERS = [
     {
         "pct": 70, "label": "Mega Clearance 🔥",
-        "duration_days": 15,  # urgent 15-day sale
-        "sale_name": "15 Days Mega Clearance Sale",
-        "reason_template": "Severe excess stock ({days_remaining} days of supply) — urgent clearance needed",
+        "sale_name": "Mega Clearance Sale",
+        "reason_template": "Severe excess stock ({days_remaining} days of supply) — urgent clearance needed ({duration} days sale)",
         "min_ratio": 8, "min_days": 60,
+        "velocity_multiplier": 3.0,   # 70% off → sales 3x faster
+        "min_duration": 7, "max_duration": 30,
     },
     {
         "pct": 50, "label": "Hot Clearance ⚡",
-        "duration_days": 15,
-        "sale_name": "15 Days Hot Clearance Sale",
-        "reason_template": "High excess stock ({days_remaining} days of supply) — heavy discount to clear",
+        "sale_name": "Hot Clearance Sale",
+        "reason_template": "High excess stock ({days_remaining} days of supply) — heavy discount to clear ({duration} days sale)",
         "min_ratio": 5, "min_days": 45,
+        "velocity_multiplier": 2.0,   # 50% off → sales 2x faster
+        "min_duration": 10, "max_duration": 45,
     },
     {
-        "pct": 30, "label": "30 Day Special 💫",
-        "duration_days": 30,
-        "sale_name": "30 Days Special Sale",
-        "reason_template": "Moderate excess stock ({days_remaining} days of supply) — category demand is low",
+        "pct": 30, "label": "Special Sale 💫",
+        "sale_name": "Special Sale",
+        "reason_template": "Moderate excess stock ({days_remaining} days of supply) — category demand is low ({duration} days sale)",
         "min_ratio": 3, "min_days": 30,
+        "velocity_multiplier": 1.5,   # 30% off → sales 1.5x faster
+        "min_duration": 14, "max_duration": 60,
     },
     {
         "pct": 15, "label": "Weekend Deal 🌟",
-        "duration_days": 30,
-        "sale_name": "30 Days Weekend Deal",
-        "reason_template": "Slight excess stock ({days_remaining} days of supply) — slow moving in category",
+        "sale_name": "Weekend Deal",
+        "reason_template": "Slight excess stock ({days_remaining} days of supply) — slow moving in category ({duration} days sale)",
         "min_ratio": 2, "min_days": 20,
+        "velocity_multiplier": 1.2,   # 15% off → sales 1.2x faster
+        "min_duration": 14, "max_duration": 60,
     },
 ]
 
@@ -821,10 +845,9 @@ def _compute_category_stats(items):
 def _should_have_discount(it, cat_stats):
     """
     Returns (pct, duration_days, reason, sale_name) or None if no discount needed.
-    Uses category-wise excess detection:
-    - stock/minStock ratio (overstock within the product itself)
-    - days_remaining relative to category average
-    - Only discounts products with BOTH excess stock AND low demand vs category
+    Duration is STOCK-BASED: calculated from how many days it takes to sell
+    through the excess stock at an accelerated velocity (due to the discount).
+    Higher discount → faster velocity → shorter sale duration needed.
     """
     if it.stock <= 0:
         return None
@@ -840,22 +863,37 @@ def _should_have_discount(it, cat_stats):
     cat_avg_daily = cat_stats.get(cat, {}).get("avg_daily_sale", avg_daily_sale)
     cat_avg_stock = cat_stats.get(cat, {}).get("avg_stock", it.stock)
 
-    # Demand relative to category: if this product sells slower than category avg → excess demand issue
+    # Demand relative to category
     demand_factor = avg_daily_sale / cat_avg_daily if cat_avg_daily > 0 else 1.0
-    # Stock relative to category: if this product has significantly more stock
-    stock_factor = it.stock / cat_avg_stock if cat_avg_stock > 0 else 1.0
+    demand_adjusted_days = days_remaining * demand_factor
 
-    # Adjust days_remaining threshold based on demand_factor
-    # Products with slower-than-category demand get discount at lower days_remaining
-    demand_adjusted_days = days_remaining * demand_factor  # if demand is 50% of cat avg, effective days doubles
+    # Safety buffer: keep minStock * 1.5 as reserve; everything above is "excess"
+    safety_buffer = max(min_s, round(min_s * 1.5))
+    excess_stock = max(0, it.stock - safety_buffer)
 
     for tier in DISCOUNT_TIERS:
         if ratio >= tier["min_ratio"] and demand_adjusted_days >= tier["min_days"]:
-            reason = tier["reason_template"].format(days_remaining=days_remaining)
-            # Add category context if relevant
+            # --- Stock-based sale duration ---
+            # With the discount, sales velocity increases by velocity_multiplier.
+            # Sale needs to run until excess stock is cleared at that faster rate.
+            velocity_multiplier = tier.get("velocity_multiplier", 1.5)
+            accelerated_daily = avg_daily_sale * velocity_multiplier
+            if excess_stock > 0 and accelerated_daily > 0:
+                days_to_clear = math.ceil(excess_stock / accelerated_daily)
+            else:
+                days_to_clear = tier["min_duration"]
+            # Clamp between min and max duration for this tier
+            duration = max(tier["min_duration"], min(tier["max_duration"], days_to_clear))
+
+            reason = tier["reason_template"].format(
+                days_remaining=days_remaining, duration=duration
+            )
             if demand_factor < 0.8:
-                reason += f" (category avg demand: {cat_avg_daily:.1f}/day, this product: {avg_daily_sale}/day)"
-            return (tier["pct"], tier["duration_days"], reason, tier["sale_name"])
+                reason += f" (category avg: {cat_avg_daily:.1f}/day, this product: {avg_daily_sale}/day)"
+
+            # Sale name shows the actual dynamic duration
+            sale_name = f"{duration}-Day {tier['sale_name']}"
+            return (tier["pct"], duration, reason, sale_name)
 
     return None
 

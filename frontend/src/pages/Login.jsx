@@ -75,7 +75,7 @@ export default function Login() {
             ))}
           </div>
 
-          <p style={{ color: "rgba(255,255,255,0.28)", fontSize: 11, marginTop: 40 }}>© 2025 SmartKirana</p>
+          <p style={{ color: "rgba(255,255,255,0.28)", fontSize: 11, marginTop: 40 }}>© 2026 SmartKirana</p>
         </div>
       </div>
 

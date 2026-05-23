@@ -159,7 +159,7 @@ function AppRoutes() {
         {user && (
           <footer className="footer-grocery">
             <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-2 opacity-70">
-              <p>© 2025 <span style={{ color: "var(--primary)", fontWeight: 700 }}>SmartKirana</span> — {user.shopName}</p>
+              <p>© 2026 <span style={{ color: "var(--primary)", fontWeight: 700 }}>SmartKirana</span> — {user.shopName}</p>
               <div className="flex gap-4 text-xs font-semibold">
                 <span className="flex items-center gap-1">
                   <span style={{ width: 8, height: 8, background: "#10B981", borderRadius: "50%", display: "inline-block" }}/>

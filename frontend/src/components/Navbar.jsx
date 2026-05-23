@@ -96,7 +96,7 @@ function LogoModal({ onClose }) {
             ))}
           </div>
 
-          <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, margin: 0 }}>© 2025 SmartKirana • v2.0</p>
+          <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, margin: 0 }}>© 2026 SmartKirana • v2.0</p>
         </div>
 
         {/* Close button */}
