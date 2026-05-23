@@ -6,6 +6,8 @@ SmartKirana AI Supply Chain Backend
 • Orders list with profit calculation
 • AI stock analysis from inventory DB data (no CSV needed for test)
 • GRU neural network for forecasting
+• Category-wise auto-discount with sale duration timers (15 / 30 days)
+• Auto-expire and re-apply discounts based on excess stock analysis
 """
 
 import ast, base64, io, json, os, math
@@ -259,6 +261,25 @@ def _compute_ai_stock(item: InventoryItemDB):
         "week2_total": sum(week2),
     }
 
+
+def _safe_get(item, attr, default=None):
+    """Safely get attribute from DB item (handles missing columns gracefully)."""
+    val = getattr(item, attr, default)
+    return val if val is not None else default
+
+
+def _days_until_expiry(expires_at_str: str) -> Optional[int]:
+    """Return how many days remain until expiry. Negative means expired."""
+    if not expires_at_str:
+        return None
+    try:
+        exp = datetime.fromisoformat(expires_at_str)
+        delta = exp.date() - datetime.utcnow().date()
+        return delta.days
+    except Exception:
+        return None
+
+
 # ===========================================================================
 # ENDPOINTS
 # ===========================================================================
@@ -422,15 +443,28 @@ def history_db(product_id: int, current_user: dict = Depends(get_current_user), 
     }
 
 # --- Inventory CRUD ---------------------------------------------------------
+def _item_to_dict(it):
+    """Serialize an InventoryItemDB to a dict including all discount fields."""
+    expires_at = _safe_get(it, "discount_expires_at", "")
+    days_left = _days_until_expiry(expires_at) if expires_at else None
+    return {
+        "id": it.id, "name": it.name, "sku": it.sku, "category": it.category,
+        "stock": it.stock, "minStock": it.minStock, "price": it.price,
+        "profit_rate": _safe_get(it, "profit_rate", 10.0),
+        "supplier": it.supplier, "image": it.image,
+        "discount_pct": _safe_get(it, "discount_pct", 0.0) or 0.0,
+        "discount_reason": _safe_get(it, "discount_reason", "") or "",
+        "discount_type": _safe_get(it, "discount_type", "") or "",
+        "discount_duration_days": _safe_get(it, "discount_duration_days", 0) or 0,
+        "discount_expires_at": expires_at or "",
+        "discount_days_left": days_left,
+    }
+
+
 @app.get("/inventory")
 def get_inventory(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     items = db.query(InventoryItemDB).filter(InventoryItemDB.user_id == current_user["id"]).all()
-    products = [{"id": it.id, "name": it.name, "sku": it.sku, "category": it.category,
-                 "stock": it.stock, "minStock": it.minStock, "price": it.price,
-                 "profit_rate": getattr(it, "profit_rate", 10.0),
-                 "supplier": it.supplier, "image": it.image,
-                 "discount_pct": getattr(it, "discount_pct", 0.0) or 0.0,
-                 "discount_reason": getattr(it, "discount_reason", "") or ""} for it in items]
+    products = [_item_to_dict(it) for it in items]
     return {"products": products, "total_items": len(products),
             "low_stock_count": sum(1 for p in products if p["stock"] < p["minStock"])}
 
@@ -456,12 +490,7 @@ def get_inventory_item(product_id: int, current_user: dict = Depends(get_current
     item = db.query(InventoryItemDB).filter(InventoryItemDB.id == product_id, InventoryItemDB.user_id == current_user["id"]).first()
     if not item:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found.")
-    return {"id": item.id, "name": item.name, "sku": item.sku, "category": item.category,
-            "stock": item.stock, "minStock": item.minStock, "price": item.price,
-            "profit_rate": getattr(item, "profit_rate", 10.0),
-            "supplier": item.supplier, "image": item.image,
-            "discount_pct": getattr(item, "discount_pct", 0.0) or 0.0,
-            "discount_reason": getattr(item, "discount_reason", "") or ""}
+    return _item_to_dict(item)
 
 @app.post("/inventory/add-product")
 def add_product_simple(req: AddProductRequest, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -528,22 +557,34 @@ def adjust_stock(product_id: int, body: StockAdjustment, current_user: dict = De
 class SetDiscountRequest(BaseModel):
     discount_pct: float
     reason: str = ""
+    duration_days: int = 30  # default 30-day sale for manual discounts
 
 @app.post("/inventory/{product_id}/discount")
 def set_discount(product_id: int, body: SetDiscountRequest, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Manually set a discount on a specific product."""
+    """Manually set a discount on a specific product with a sale duration timer."""
     db_item = db.query(InventoryItemDB).filter(InventoryItemDB.id == product_id, InventoryItemDB.user_id == current_user["id"]).first()
     if not db_item:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found.")
     if body.discount_pct < 0 or body.discount_pct > 90:
         raise HTTPException(status_code=400, detail="Discount must be between 0 and 90%.")
+
+    duration = max(1, min(body.duration_days, 90))  # clamp between 1 and 90 days
+    expires_at = (datetime.utcnow() + timedelta(days=duration)).isoformat()
+
     db_item.discount_pct = body.discount_pct
-    db_item.discount_reason = body.reason or f"Manual discount — {body.discount_pct}% off"
+    db_item.discount_reason = body.reason or f"Custom {body.discount_pct}% off — Limited time sale"
+    db_item.discount_type = "manual"
+    db_item.discount_duration_days = duration
+    db_item.discount_expires_at = expires_at
     db.commit()
+
     discounted_price = round(db_item.price * (1 - body.discount_pct / 100), 2)
-    return {"message": f"Discount of {body.discount_pct}% applied to '{db_item.name}'",
-            "product_id": db_item.id, "name": db_item.name,
-            "original_price": db_item.price, "discounted_price": discounted_price}
+    return {
+        "message": f"Discount of {body.discount_pct}% applied to '{db_item.name}'",
+        "product_id": db_item.id, "name": db_item.name,
+        "original_price": db_item.price, "discounted_price": discounted_price,
+        "expires_at": expires_at, "duration_days": duration,
+    }
 
 @app.post("/inventory/{product_id}/remove-discount")
 def remove_discount(product_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -553,6 +594,9 @@ def remove_discount(product_id: int, current_user: dict = Depends(get_current_us
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found.")
     db_item.discount_pct = 0.0
     db_item.discount_reason = ""
+    db_item.discount_type = ""
+    db_item.discount_duration_days = 0
+    db_item.discount_expires_at = ""
     db.commit()
     return {"message": f"Discount removed from '{db_item.name}'", "product_id": db_item.id}
 
@@ -578,7 +622,7 @@ def scan_product(payload: ScanPayload, current_user: dict = Depends(get_current_
         raise HTTPException(status_code=400, detail="Stock is already 0.")
     item.stock -= 1
     db.commit(); db.refresh(item)
-    discount_pct = getattr(item, "discount_pct", 0.0) or 0.0
+    discount_pct = _safe_get(item, "discount_pct", 0.0) or 0.0
     discounted_price = round(item.price * (1 - discount_pct / 100), 2)
     return {"message": f"Stock decremented for '{item.name}'",
             "product_id": item.id, "product_name": item.name,
@@ -586,7 +630,7 @@ def scan_product(payload: ScanPayload, current_user: dict = Depends(get_current_
             "mrp": item.price,                  # Original MRP (GST-inclusive)
             "price": discounted_price,           # Actual selling price (after discount)
             "discount_pct": discount_pct,
-            "profit_rate": getattr(item, "profit_rate", 10.0)}
+            "profit_rate": _safe_get(item, "profit_rate", 10.0)}
 
 # --- Orders -----------------------------------------------------------------
 @app.post("/orders")
@@ -602,7 +646,7 @@ def create_order(req: CreateOrderRequest, current_user: dict = Depends(get_curre
         if item.stock < entry.quantity:
             raise HTTPException(status_code=400, detail=f"Insufficient stock for '{item.name}'.")
         subtotal = item.price * entry.quantity
-        profit_rate = getattr(item, "profit_rate", 10.0)
+        profit_rate = _safe_get(item, "profit_rate", 10.0)
         profit = round(subtotal * profit_rate / 100, 2)
         order_items_data.append({"item": item, "quantity": entry.quantity,
                                   "subtotal": subtotal, "profit": profit, "profit_rate": profit_rate})
@@ -712,6 +756,245 @@ async def upload_csv(file: UploadFile = File(...), current_user: dict = Depends(
 def logout():
     return {"message": "Logged out successfully"}
 
+# ===========================================================================
+# AI DISCOUNT ENGINE — Category-Wise with Sale Duration Timers
+# ===========================================================================
+
+# Discount tier names and configurations
+DISCOUNT_TIERS = [
+    {
+        "pct": 70, "label": "Mega Clearance 🔥",
+        "duration_days": 15,  # urgent 15-day sale
+        "sale_name": "15 Days Mega Clearance Sale",
+        "reason_template": "Severe excess stock ({days_remaining} days of supply) — urgent clearance needed",
+        "min_ratio": 8, "min_days": 60,
+    },
+    {
+        "pct": 50, "label": "Hot Clearance ⚡",
+        "duration_days": 15,
+        "sale_name": "15 Days Hot Clearance Sale",
+        "reason_template": "High excess stock ({days_remaining} days of supply) — heavy discount to clear",
+        "min_ratio": 5, "min_days": 45,
+    },
+    {
+        "pct": 30, "label": "30 Day Special 💫",
+        "duration_days": 30,
+        "sale_name": "30 Days Special Sale",
+        "reason_template": "Moderate excess stock ({days_remaining} days of supply) — category demand is low",
+        "min_ratio": 3, "min_days": 30,
+    },
+    {
+        "pct": 15, "label": "Weekend Deal 🌟",
+        "duration_days": 30,
+        "sale_name": "30 Days Weekend Deal",
+        "reason_template": "Slight excess stock ({days_remaining} days of supply) — slow moving in category",
+        "min_ratio": 2, "min_days": 20,
+    },
+]
+
+
+def _compute_category_stats(items):
+    """Compute per-category average stock and average minStock for context."""
+    cat_data = {}
+    for it in items:
+        cat = it.category or "Grocery"
+        if cat not in cat_data:
+            cat_data[cat] = {"stocks": [], "min_stocks": [], "daily_sales": []}
+        min_s = it.minStock if it.minStock > 0 else 5
+        avg_daily = max(1, round(min_s * 0.7))
+        cat_data[cat]["stocks"].append(it.stock)
+        cat_data[cat]["min_stocks"].append(min_s)
+        cat_data[cat]["daily_sales"].append(avg_daily)
+    # Compute averages
+    stats = {}
+    for cat, d in cat_data.items():
+        n = len(d["stocks"])
+        stats[cat] = {
+            "avg_stock": sum(d["stocks"]) / n if n > 0 else 0,
+            "avg_min_stock": sum(d["min_stocks"]) / n if n > 0 else 5,
+            "avg_daily_sale": sum(d["daily_sales"]) / n if n > 0 else 1,
+            "count": n,
+        }
+    return stats
+
+
+def _should_have_discount(it, cat_stats):
+    """
+    Returns (pct, duration_days, reason, sale_name) or None if no discount needed.
+    Uses category-wise excess detection:
+    - stock/minStock ratio (overstock within the product itself)
+    - days_remaining relative to category average
+    - Only discounts products with BOTH excess stock AND low demand vs category
+    """
+    if it.stock <= 0:
+        return None
+
+    min_s = it.minStock if it.minStock > 0 else 5
+    ratio = it.stock / min_s
+
+    # Estimate avg daily sales from minStock (demand proxy)
+    avg_daily_sale = max(1, round(min_s * 0.7))
+    days_remaining = it.stock // avg_daily_sale if avg_daily_sale > 0 else 999
+
+    cat = it.category or "Grocery"
+    cat_avg_daily = cat_stats.get(cat, {}).get("avg_daily_sale", avg_daily_sale)
+    cat_avg_stock = cat_stats.get(cat, {}).get("avg_stock", it.stock)
+
+    # Demand relative to category: if this product sells slower than category avg → excess demand issue
+    demand_factor = avg_daily_sale / cat_avg_daily if cat_avg_daily > 0 else 1.0
+    # Stock relative to category: if this product has significantly more stock
+    stock_factor = it.stock / cat_avg_stock if cat_avg_stock > 0 else 1.0
+
+    # Adjust days_remaining threshold based on demand_factor
+    # Products with slower-than-category demand get discount at lower days_remaining
+    demand_adjusted_days = days_remaining * demand_factor  # if demand is 50% of cat avg, effective days doubles
+
+    for tier in DISCOUNT_TIERS:
+        if ratio >= tier["min_ratio"] and demand_adjusted_days >= tier["min_days"]:
+            reason = tier["reason_template"].format(days_remaining=days_remaining)
+            # Add category context if relevant
+            if demand_factor < 0.8:
+                reason += f" (category avg demand: {cat_avg_daily:.1f}/day, this product: {avg_daily_sale}/day)"
+            return (tier["pct"], tier["duration_days"], reason, tier["sale_name"])
+
+    return None
+
+
+@app.post("/apply-discounts")
+def apply_discounts(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    AI-powered auto-discount: category-wise analysis of excess stock and demand.
+    - Groups products by category to detect relative excess
+    - Applies discounts only to truly slow-moving excess stock
+    - Sets a sale duration timer (15 or 30 days) per tier
+    - Fast-selling products are NEVER discounted
+    Tiers: 15% (Weekend Deal) → 30% (30 Day Special) → 50% (Hot Clearance) → 70% (Mega Clearance)
+    """
+    items = db.query(InventoryItemDB).filter(InventoryItemDB.user_id == current_user["id"]).all()
+    applied_to = []
+    cleared = []
+
+    # Build category stats for relative comparison
+    cat_stats = _compute_category_stats(items)
+
+    for it in items:
+        if it.stock <= 0:
+            # Out of stock — clear any auto discount
+            if _safe_get(it, "discount_type", "") == "auto":
+                it.discount_pct = 0.0
+                it.discount_reason = ""
+                it.discount_type = ""
+                it.discount_duration_days = 0
+                it.discount_expires_at = ""
+            continue
+
+        # Don't override manual discounts
+        if _safe_get(it, "discount_type", "") == "manual":
+            continue
+
+        result = _should_have_discount(it, cat_stats)
+        if result:
+            pct, duration_days, reason, sale_name = result
+            expires_at = (datetime.utcnow() + timedelta(days=duration_days)).isoformat()
+            it.discount_pct = pct
+            it.discount_reason = f"{sale_name} — {reason}"
+            it.discount_type = "auto"
+            it.discount_duration_days = duration_days
+            it.discount_expires_at = expires_at
+            applied_to.append({
+                "name": it.name,
+                "category": it.category,
+                "discount_pct": pct,
+                "sale_name": sale_name,
+                "duration_days": duration_days,
+                "expires_at": expires_at,
+                "reason": reason,
+            })
+        else:
+            # No longer qualifies → clear auto discount
+            if _safe_get(it, "discount_type", "") == "auto":
+                it.discount_pct = 0.0
+                it.discount_reason = ""
+                it.discount_type = ""
+                it.discount_duration_days = 0
+                it.discount_expires_at = ""
+                cleared.append(it.name)
+
+    db.commit()
+    return {
+        "message": f"AI discounts applied to {len(applied_to)} products.",
+        "applied_to": applied_to,
+        "cleared": cleared,
+        "summary": {
+            "70_pct": sum(1 for x in applied_to if x["discount_pct"] == 70),
+            "50_pct": sum(1 for x in applied_to if x["discount_pct"] == 50),
+            "30_pct": sum(1 for x in applied_to if x["discount_pct"] == 30),
+            "15_pct": sum(1 for x in applied_to if x["discount_pct"] == 15),
+        }
+    }
+
+
+@app.post("/refresh-discounts")
+def refresh_discounts(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Auto-expire ended discounts and re-apply if stock is still excess.
+    Call this on page load to keep discount timers accurate.
+    """
+    items = db.query(InventoryItemDB).filter(InventoryItemDB.user_id == current_user["id"]).all()
+    cat_stats = _compute_category_stats(items)
+    today = datetime.utcnow()
+    expired = []
+    reapplied = []
+
+    for it in items:
+        dtype = _safe_get(it, "discount_type", "")
+        expires_at_str = _safe_get(it, "discount_expires_at", "")
+
+        if not expires_at_str or dtype not in ("auto", "manual"):
+            continue
+
+        try:
+            exp = datetime.fromisoformat(expires_at_str)
+        except Exception:
+            continue
+
+        if today >= exp:
+            # Discount expired
+            expired.append(it.name)
+            if dtype == "auto":
+                # Check if still qualifies for auto discount → reapply
+                result = _should_have_discount(it, cat_stats)
+                if result and it.stock > 0:
+                    pct, duration_days, reason, sale_name = result
+                    new_exp = (today + timedelta(days=duration_days)).isoformat()
+                    it.discount_pct = pct
+                    it.discount_reason = f"{sale_name} — {reason}"
+                    it.discount_type = "auto"
+                    it.discount_duration_days = duration_days
+                    it.discount_expires_at = new_exp
+                    reapplied.append({"name": it.name, "discount_pct": pct, "duration_days": duration_days})
+                else:
+                    it.discount_pct = 0.0
+                    it.discount_reason = ""
+                    it.discount_type = ""
+                    it.discount_duration_days = 0
+                    it.discount_expires_at = ""
+            else:
+                # Manual discount expired — clear it
+                it.discount_pct = 0.0
+                it.discount_reason = ""
+                it.discount_type = ""
+                it.discount_duration_days = 0
+                it.discount_expires_at = ""
+
+    db.commit()
+    return {
+        "message": f"Refreshed discounts. {len(expired)} expired, {len(reapplied)} re-applied.",
+        "expired": expired,
+        "reapplied": reapplied,
+    }
+
+
 # --- Trending / Deals -------------------------------------------------------
 @app.get("/trending")
 def get_trending(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -722,13 +1005,20 @@ def get_trending(current_user: dict = Depends(get_current_user), db: Session = D
 
     for it in items:
         reorder_point = (it.minStock if it.minStock > 0 else 5) + max(1, round((it.minStock or 5) * 0.7)) * 7
+        disc_pct = _safe_get(it, "discount_pct", 0) or 0
+        expires_at = _safe_get(it, "discount_expires_at", "") or ""
+        days_left = _days_until_expiry(expires_at) if expires_at else None
 
-        if getattr(it, "discount_pct", 0) and it.discount_pct > 0:
+        if disc_pct > 0:
             discounted.append({
                 "name": it.name, "sku": it.sku, "category": it.category,
                 "stock": it.stock, "price": it.price, "image": it.image,
-                "discount_pct": it.discount_pct,
-                "reason": getattr(it, "discount_reason", "") or "High stock / low demand",
+                "discount_pct": disc_pct,
+                "discount_type": _safe_get(it, "discount_type", "") or "",
+                "discount_duration_days": _safe_get(it, "discount_duration_days", 0) or 0,
+                "discount_expires_at": expires_at,
+                "discount_days_left": days_left,
+                "reason": _safe_get(it, "discount_reason", "") or "High stock / low demand",
             })
 
         if it.stock <= (it.minStock or 5) + 10:
@@ -737,7 +1027,7 @@ def get_trending(current_user: dict = Depends(get_current_user), db: Session = D
         if it.stock >= (it.minStock or 5) * 3 and it.stock > 50:
             dead_stock.append({
                 "name": it.name, "stock": it.stock, "category": it.category,
-                "discount": getattr(it, "discount_pct", 0) or 0,
+                "discount": disc_pct,
             })
 
     top_selling.sort(key=lambda x: x["stock"])
@@ -759,67 +1049,4 @@ def get_trending(current_user: dict = Depends(get_current_user), db: Session = D
         "ai_insight": insight,
         "total_discounted": n_disc,
         "total_dead_stock": n_dead,
-    }
-
-@app.post("/apply-discounts")
-def apply_discounts(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """AI-powered auto-discount: factors both overstock ratio AND demand (days remaining).
-    Products selling fast are NEVER discounted — only truly slow-moving excess stock gets marked down.
-    Tiers: 15% → 30% → 50% → 70% based on severity.
-    """
-    items = db.query(InventoryItemDB).filter(InventoryItemDB.user_id == current_user["id"]).all()
-    applied_to = []
-
-    for it in items:
-        min_s = it.minStock if it.minStock > 0 else 5
-        ratio = it.stock / min_s if min_s > 0 else 0
-
-        # Estimate avg daily sales from minStock (demand proxy)
-        avg_daily_sale = max(1, round(min_s * 0.7))
-        days_remaining = it.stock // avg_daily_sale if avg_daily_sale > 0 else 999
-
-        if it.stock <= 0:
-            it.discount_pct = 0.0
-            it.discount_reason = ""
-            continue
-
-        # If stock will run out in < 20 days — selling fast, NO discount needed
-        if days_remaining < 20:
-            it.discount_pct = 0.0
-            it.discount_reason = ""
-            continue
-
-        # Apply discount only when BOTH overstock ratio AND low demand confirm excess
-        if ratio >= 8 and days_remaining >= 60:
-            pct = 70.0
-            reason = f"Severe overstock — {days_remaining} days of stock left, very low demand"
-        elif ratio >= 5 and days_remaining >= 45:
-            pct = 50.0
-            reason = f"High overstock — {days_remaining} days of stock left, slow moving"
-        elif ratio >= 3 and days_remaining >= 30:
-            pct = 30.0
-            reason = f"Moderate overstock — {days_remaining} days of stock left"
-        elif ratio >= 2 and days_remaining >= 20:
-            pct = 15.0
-            reason = f"Slight overstock — {days_remaining} days of stock left"
-        else:
-            # Well-stocked or fast-moving — no discount
-            it.discount_pct = 0.0
-            it.discount_reason = ""
-            continue
-
-        it.discount_pct = pct
-        it.discount_reason = reason
-        applied_to.append({"name": it.name, "discount_pct": pct, "reason": reason})
-
-    db.commit()
-    return {
-        "message": f"AI discounts applied to {len(applied_to)} products.",
-        "applied_to": applied_to,
-        "summary": {
-            "70_pct": sum(1 for x in applied_to if x["discount_pct"] == 70.0),
-            "50_pct": sum(1 for x in applied_to if x["discount_pct"] == 50.0),
-            "30_pct": sum(1 for x in applied_to if x["discount_pct"] == 30.0),
-            "15_pct": sum(1 for x in applied_to if x["discount_pct"] == 15.0),
-        }
     }

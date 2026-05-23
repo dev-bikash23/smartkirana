@@ -27,6 +27,8 @@
   --text-heading:     #1A1433;
   --text-body:        #3D3466;
   --text-muted:       #9990CC;
+  --text-secondary:   #475569;
+  --text-tertiary:    #64748B;
 
   --success:          #10B981;
   --warning:          #F59E0B;
@@ -41,10 +43,48 @@
 
   --blob1:            rgba(108,99,255,0.10);
   --blob2:            rgba(27,205,254,0.08);
+
+  /* ── Deal / Discount color tokens (light) ── */
+  --deal-red-bg:      #FFF1F2;
+  --deal-red-border:  #FECDD3;
+  --deal-red-text:    #BE123C;
+
+  --deal-orange-bg:   #FFF7ED;
+  --deal-orange-border:#FED7AA;
+  --deal-orange-text: #C2410C;
+
+  --deal-yellow-bg:   #FEFCE8;
+  --deal-yellow-border:#FDE68A;
+  --deal-yellow-text: #B45309;
+
+  --deal-green-bg:    #F0FDF4;
+  --deal-green-border:#BBF7D0;
+  --deal-green-text:  #15803D;
+
+  /* ── Deal card & panel tokens ── */
+  --deal-card-bg:         rgba(255,255,255,0.90);
+  --deal-card-icon-bg:    #FFFFFF;
+  --deal-filter-btn-bg:   #FFFFFF;
+  --deal-filter-btn-text: #475569;
+  --deal-filter-btn-border: #E8EDFF;
+  --deal-tier-badge-bg:   #FFFFFF;
+  --deal-refresh-bg:      rgba(108,99,255,0.08);
+  --deal-refresh-border:  rgba(108,99,255,0.22);
+  --deal-refresh-text:    #6C63FF;
+
+  /* ── Timer badge tokens ── */
+  --deal-timer-bg:    #EFF6FF;
+  --deal-timer-text:  #1D4ED8;
+  --deal-urgent-bg:   #FFF1F2;
+  --deal-urgent-text: #BE123C;
+  --deal-expired-bg:  #F1F5F9;
+  --deal-expired-text:#64748B;
+  --deal-salelabel-bg:#F0FDF4;
+  --deal-salelabel-text:#15803D;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   DARK THEME (Night Mode) — Hotstar-Inspired
+   DARK THEME (Night Mode) — Full visibility fix
 ═══════════════════════════════════════════════════════════════ */
 [data-theme="dark"] {
   --primary:          #7B6EFF;
@@ -68,7 +108,9 @@
 
   --text-heading:     #F0EEFF;
   --text-body:        #B8B0E8;
-  --text-muted:       #5E5690;
+  --text-muted:       #8B85CC;
+  --text-secondary:   #C4BFEE;
+  --text-tertiary:    #A09CC0;
 
   --success:          #10B981;
   --warning:          #F59E0B;
@@ -83,6 +125,44 @@
 
   --blob1:            rgba(123,110,255,0.12);
   --blob2:            rgba(27,205,254,0.07);
+
+  /* ── Deal / Discount color tokens (dark — visible on dark bg) ── */
+  --deal-red-bg:      rgba(225,29,72,0.15);
+  --deal-red-border:  rgba(225,29,72,0.30);
+  --deal-red-text:    #FF8099;
+
+  --deal-orange-bg:   rgba(234,88,12,0.15);
+  --deal-orange-border:rgba(234,88,12,0.30);
+  --deal-orange-text: #FFAA6B;
+
+  --deal-yellow-bg:   rgba(217,119,6,0.15);
+  --deal-yellow-border:rgba(217,119,6,0.30);
+  --deal-yellow-text: #FFD166;
+
+  --deal-green-bg:    rgba(22,163,74,0.15);
+  --deal-green-border:rgba(22,163,74,0.30);
+  --deal-green-text:  #6EE7A0;
+
+  /* ── Deal card & panel tokens (dark) ── */
+  --deal-card-bg:         rgba(255,255,255,0.06);
+  --deal-card-icon-bg:    rgba(255,255,255,0.08);
+  --deal-filter-btn-bg:   rgba(255,255,255,0.06);
+  --deal-filter-btn-text: #C4BFEE;
+  --deal-filter-btn-border: rgba(123,110,255,0.25);
+  --deal-tier-badge-bg:   rgba(255,255,255,0.07);
+  --deal-refresh-bg:      rgba(123,110,255,0.12);
+  --deal-refresh-border:  rgba(123,110,255,0.30);
+  --deal-refresh-text:    #A89EFF;
+
+  /* ── Timer badge tokens (dark) ── */
+  --deal-timer-bg:    rgba(29,78,216,0.20);
+  --deal-timer-text:  #93C5FD;
+  --deal-urgent-bg:   rgba(225,29,72,0.20);
+  --deal-urgent-text: #FF8099;
+  --deal-expired-bg:  rgba(100,116,139,0.15);
+  --deal-expired-text:#94A3B8;
+  --deal-salelabel-bg:rgba(22,163,74,0.15);
+  --deal-salelabel-text:#6EE7A0;
 }
 
 /* ── Base Reset ──────────────────────────────────────────────────────── */
@@ -304,6 +384,195 @@ body::after {
   position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
   pointer-events: none; font-size: 15px; opacity: 0.50;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   DEALS & DISCOUNT PAGE — theme-aware utility classes
+   These replace all hardcoded light-only colors in Deals.jsx
+   and Trending.jsx so dark mode renders correctly.
+════════════════════════════════════════════════════════════════════ */
+
+/* ── Deal card ── */
+.deal-card {
+  background: var(--deal-card-bg);
+  border: 1.5px solid;
+}
+.deal-card-icon {
+  background: var(--deal-card-icon-bg);
+}
+.deal-card-name {
+  color: var(--text-heading);
+}
+.deal-card-category {
+  color: var(--text-muted);
+}
+.deal-card-sku {
+  color: var(--text-muted);
+}
+.deal-card-sku-value {
+  color: var(--text-secondary);
+}
+.deal-price-original {
+  color: var(--text-muted);
+}
+.deal-stock-label {
+  color: var(--text-muted);
+}
+.deal-card-stock {
+  color: var(--text-heading);
+}
+.deal-tier-badge {
+  background: var(--deal-tier-badge-bg);
+}
+.deal-reason {
+  color: var(--text-muted);
+}
+
+/* ── Stat pill labels ── */
+.deal-stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Section labels ── */
+.deal-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* ── Filter button inactive state ── */
+button[data-active="true"] {
+  background: var(--deal-filter-btn-bg) !important;
+  color: var(--deal-filter-btn-text) !important;
+  border: 1.5px solid var(--deal-filter-btn-border) !important;
+}
+
+/* ── Refresh button ── */
+.deals-refresh-btn {
+  background: var(--deal-refresh-bg);
+  border: 1.5px solid var(--deal-refresh-border);
+  color: var(--deal-refresh-text);
+}
+
+/* ── Empty state text ── */
+.deals-heading {
+  color: var(--text-heading);
+}
+.deals-subheading {
+  color: var(--text-secondary);
+}
+.deals-empty-text {
+  color: var(--text-muted);
+}
+
+/* ── Sale duration timer badges ── */
+.deal-timer-badge {
+  background: var(--deal-timer-bg);
+  color: var(--deal-timer-text);
+}
+.deal-urgent-badge {
+  background: var(--deal-urgent-bg);
+  color: var(--deal-urgent-text);
+}
+.deal-expired-badge {
+  background: var(--deal-expired-bg);
+  color: var(--deal-expired-text);
+}
+.deal-sale-label {
+  background: var(--deal-salelabel-bg);
+  color: var(--deal-salelabel-text);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TRENDING PAGE — theme-aware utility classes
+════════════════════════════════════════════════════════════════════ */
+
+.trending-heading {
+  color: var(--text-heading);
+}
+.trending-subheading {
+  color: var(--text-secondary);
+}
+.trending-stat-label {
+  color: var(--text-muted);
+}
+.trending-section-title {
+  color: var(--text-heading);
+}
+.trending-section-sub {
+  color: var(--text-muted);
+}
+.trending-empty {
+  color: var(--text-muted);
+}
+.trending-product-name {
+  color: var(--text-heading);
+}
+.trending-product-cat {
+  color: var(--text-muted);
+}
+.trending-sku {
+  color: var(--text-muted);
+}
+.trending-price-orig {
+  color: var(--text-muted);
+}
+.trending-price-save {
+  color: var(--text-muted);
+}
+.trending-rank {
+  color: var(--text-muted);
+}
+.trending-discount-row {
+  background: var(--deal-red-bg);
+}
+.trending-row-hover:hover {
+  background: var(--bg-card);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   GLOBAL DARK MODE OVERRIDES
+   Force commonly used Tailwind hardcoded colors to be readable
+   in dark mode. This catches any component using these exact values.
+════════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] .text-\[\#1E293B\]  { color: var(--text-heading) !important; }
+[data-theme="dark"] .text-\[\#475569\]  { color: var(--text-secondary) !important; }
+[data-theme="dark"] .text-\[\#64748B\]  { color: var(--text-tertiary) !important; }
+[data-theme="dark"] .text-\[\#94A3B8\]  { color: var(--text-muted) !important; }
+[data-theme="dark"] .text-\[\#334155\]  { color: var(--text-secondary) !important; }
+[data-theme="dark"] .text-\[\#0F172A\]  { color: var(--text-heading) !important; }
+[data-theme="dark"] .text-\[\#1A1433\]  { color: var(--text-heading) !important; }
+[data-theme="dark"] .text-\[\#3D3466\]  { color: var(--text-body) !important; }
+[data-theme="dark"] .text-\[\#374151\]  { color: var(--text-secondary) !important; }
+[data-theme="dark"] .text-\[\#111827\]  { color: var(--text-heading) !important; }
+[data-theme="dark"] .text-\[\#1F2937\]  { color: var(--text-heading) !important; }
+[data-theme="dark"] .text-\[\#6B7280\]  { color: var(--text-muted) !important; }
+[data-theme="dark"] .text-\[\#9CA3AF\]  { color: var(--text-muted) !important; }
+[data-theme="dark"] .text-gray-800      { color: var(--text-heading) !important; }
+[data-theme="dark"] .text-gray-700      { color: var(--text-secondary) !important; }
+[data-theme="dark"] .text-gray-600      { color: var(--text-tertiary) !important; }
+[data-theme="dark"] .text-gray-500      { color: var(--text-muted) !important; }
+[data-theme="dark"] .text-gray-400      { color: var(--text-muted) !important; }
+[data-theme="dark"] .text-slate-800     { color: var(--text-heading) !important; }
+[data-theme="dark"] .text-slate-700     { color: var(--text-secondary) !important; }
+[data-theme="dark"] .text-slate-600     { color: var(--text-tertiary) !important; }
+[data-theme="dark"] .text-slate-500     { color: var(--text-muted) !important; }
+[data-theme="dark"] .text-slate-400     { color: var(--text-muted) !important; }
+
+/* Dark mode background overrides for white card regions */
+[data-theme="dark"] .bg-white           { background: var(--bg-card-strong) !important; }
+[data-theme="dark"] .bg-gray-50         { background: rgba(255,255,255,0.04) !important; }
+[data-theme="dark"] .bg-gray-100        { background: rgba(255,255,255,0.06) !important; }
+[data-theme="dark"] .bg-slate-50        { background: rgba(255,255,255,0.04) !important; }
+[data-theme="dark"] .bg-slate-100       { background: rgba(255,255,255,0.06) !important; }
+
+/* Border color overrides in dark mode */
+[data-theme="dark"] .border-gray-200    { border-color: rgba(255,255,255,0.10) !important; }
+[data-theme="dark"] .border-slate-200   { border-color: rgba(255,255,255,0.10) !important; }
+[data-theme="dark"] .border-\[\#E8EDFF\] { border-color: rgba(123,110,255,0.20) !important; }
 
 /* ── Animations ──────────────────────────────────────────────────────── */
 @keyframes fadeInUp {

@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
-
-const API = "http://localhost:8000";
+import { API } from "../config.js";
 
 export default function AlertBanner() {
   const [alerts, setAlerts] = useState([]);

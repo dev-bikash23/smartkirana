@@ -1,6 +1,7 @@
 """
 database.py – SQLAlchemy models and database initialisation for SQLite.
 Extended with SalesRecordDB for CSV uploads and discount/seasonal fields.
+Extended with discount timer fields: discount_expires_at, discount_duration_days, discount_type.
 """
 
 from sqlalchemy import (
@@ -49,8 +50,12 @@ class InventoryItemDB(Base):
     supplier = Column(String, default="")
     image = Column(String, default="📦")
     # Discount fields
-    discount_pct = Column(Float, default=0.0)       # 0, 20, 30, 50, 70
+    discount_pct = Column(Float, default=0.0)       # 0, 15, 30, 50, 70
     discount_reason = Column(String, default="")
+    # Discount timer & type fields
+    discount_type = Column(String, default="")       # "auto" | "manual" | ""
+    discount_duration_days = Column(Integer, default=0)  # 15 or 30 days
+    discount_expires_at = Column(String, default="")     # ISO date string
     # Seasonal fields
     is_seasonal = Column(Boolean, default=False)
     season_tag = Column(String, default="")          # e.g. "Winter", "Summer"
@@ -133,6 +138,12 @@ def _add_missing_columns():
             conn.execute(text("ALTER TABLE inventory ADD COLUMN discount_pct REAL DEFAULT 0.0"))
         if "discount_reason" not in inv_cols:
             conn.execute(text("ALTER TABLE inventory ADD COLUMN discount_reason TEXT DEFAULT ''"))
+        if "discount_type"   not in inv_cols:
+            conn.execute(text("ALTER TABLE inventory ADD COLUMN discount_type TEXT DEFAULT ''"))
+        if "discount_duration_days" not in inv_cols:
+            conn.execute(text("ALTER TABLE inventory ADD COLUMN discount_duration_days INTEGER DEFAULT 0"))
+        if "discount_expires_at" not in inv_cols:
+            conn.execute(text("ALTER TABLE inventory ADD COLUMN discount_expires_at TEXT DEFAULT ''"))
         if "is_seasonal"     not in inv_cols:
             conn.execute(text("ALTER TABLE inventory ADD COLUMN is_seasonal INTEGER DEFAULT 0"))
         if "season_tag"      not in inv_cols:
