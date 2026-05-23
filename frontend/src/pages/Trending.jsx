@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import AlertBanner from "../components/AlertBanner";
 
-const API = "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 function DiscountBadge({ pct }) {
   const color = pct >= 70 ? { bg: "var(--deal-red-bg)",    text: "#BE123C", border: "var(--deal-red-border)" }
