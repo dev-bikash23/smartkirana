@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import HistoryChart from "../components/HistoryChart";
+import ForecastChart from "../components/ForecastChart";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -39,6 +41,7 @@ export default function History() {
   const [selected, setSelected] = useState(null);
   const [salesData, setSalesData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
 
   // Load inventory products from DB
   useEffect(() => {
@@ -57,11 +60,11 @@ export default function History() {
   useEffect(() => {
     if (!selected) { setSalesData(null); return; }
     setLoading(true);
-    axios.get(`${API}/history/db/${selected.id}`, authHeaders())
+    axios.get(`${API}/history/db/${selected.id}?demo=${demoMode}`, authHeaders())
       .then(r => setSalesData(r.data))
       .catch(() => setSalesData(null))
       .finally(() => setLoading(false));
-  }, [selected]);
+  }, [selected, demoMode]);
 
   const colorIdx = products.findIndex(p => p.id === selected?.id);
   const color = getColor(colorIdx >= 0 ? colorIdx : 0);
@@ -81,13 +84,32 @@ export default function History() {
   const statusBg    = stockLevel <= 0 ? "#FFF1F2" : isLow ? "#FFF7ED" : isExcess ? "#FAF5FF" : "#F0FDF4";
   const statusBorder= stockLevel <= 0 ? "#FECDD3" : isLow ? "#FED7AA" : isExcess ? "#E9D5FF" : "#BBF7D0";
 
-  // Chart from CSV data
-  const avgSales = salesData
+  // Chart stats computed dynamically
+  const hasHistory = salesData && salesData.history_units && salesData.history_units.length > 0;
+  
+  const avgSales = hasHistory
+    ? Math.round(salesData.history_units.reduce((a, b) => a + b, 0) / salesData.history_units.length)
+    : salesData && salesData.units_sold && salesData.units_sold.length > 0
     ? Math.round(salesData.units_sold.reduce((a, b) => a + b, 0) / salesData.units_sold.length)
     : 0;
-  const maxSales = salesData ? Math.max(...salesData.units_sold) : 0;
-  const minSales = salesData ? Math.min(...salesData.units_sold) : 0;
-  const totalSales = salesData ? salesData.units_sold.reduce((a, b) => a + b, 0) : 0;
+    
+  const maxSales = hasHistory 
+    ? Math.max(...salesData.history_units) 
+    : salesData && salesData.units_sold && salesData.units_sold.length > 0
+    ? Math.max(...salesData.units_sold)
+    : 0;
+    
+  const minSales = hasHistory
+    ? Math.min(...salesData.history_units)
+    : salesData && salesData.units_sold && salesData.units_sold.length > 0
+    ? Math.min(...salesData.units_sold)
+    : 0;
+    
+  const totalSales = hasHistory
+    ? salesData.history_units.reduce((a, b) => a + b, 0)
+    : salesData && salesData.units_sold && salesData.units_sold.length > 0
+    ? salesData.units_sold.reduce((a, b) => a + b, 0)
+    : 0;
 
   if (!products.length) return (
     <div className="flex items-center justify-center min-h-[60vh]">
@@ -155,6 +177,27 @@ export default function History() {
       {/* ── Selected Product Panel ── */}
       {selected && (
         <div className="space-y-6 animate-fade-in-up">
+
+          {/* Demo Toggle Banner */}
+          <div className="glass-panel p-4 flex flex-wrap items-center justify-between bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200 gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2.5xl">🧪</span>
+              <div>
+                <p className="font-bold text-sm text-purple-950">Analytics Mode Selection</p>
+                <p className="text-xs text-purple-700">Choose between real store checkout sales or simulated AI demo graphs.</p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={demoMode}
+                onChange={(e) => setDemoMode(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              <span className="ml-3 text-xs font-bold text-purple-950">{demoMode ? "Demo Mode ON (Simulated)" : "Real Store Mode"}</span>
+            </label>
+          </div>
 
           {/* Product info + stats */}
           <div className="glass-panel overflow-hidden" style={{ borderColor: color.border }}>
@@ -249,88 +292,144 @@ export default function History() {
             </div>
           )}
 
-          {!loading && salesData && (
-            <div className="glass-panel overflow-hidden animate-fade-in-up" style={{ borderColor: color.border }}>
-              <div className="h-1 w-full" style={{ background: color.gradient }} />
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <h3 className="text-lg font-bold text-[#1E293B]">🔮 7-Day Sales Forecast — {selected.name}</h3>
-                    <p className="text-xs text-[#94A3B8] mt-0.5">
-                      {salesData?.source === "gru_model"
-                        ? "🤖 GRU Neural Network · Real future dates"
-                        : "🧠 AI-simulated forecast · Real future dates"}
-                    </p>
+          {!loading && salesData && salesData.source === "actual_empty" && (
+            <div className="glass-panel p-16 flex flex-col items-center gap-4 text-center border-dashed border-2 border-purple-300 bg-purple-50/5 animate-fade-in-up">
+              <div className="text-6xl animate-pulse">📊</div>
+              <h3 className="text-xl font-bold text-[#1E293B]">No Sales Logged Yet</h3>
+              <p className="text-[#94A3B8] text-sm max-w-sm">
+                This product has no registered customer sales in your database yet. Complete checkouts using the <strong>POS Scanner</strong> to start building real-time historical reports.
+              </p>
+              <button onClick={() => setDemoMode(true)} className="px-6 py-3 rounded-xl font-bold text-white shadow-lg bg-gradient-to-r from-purple-600 to-indigo-600 transition-all hover:scale-105 active:scale-95">
+                🧪 Enable Demo Analytics Mode
+              </button>
+            </div>
+          )}
+
+          {!loading && salesData && salesData.source !== "actual_empty" && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 14-Day Sales History */}
+                <div className="glass-panel p-6 overflow-hidden animate-fade-in-up" style={{ borderColor: color.border }}>
+                  <h3 className="text-base font-bold text-[#1E293B] mb-4 flex items-center gap-2">
+                    <span className="w-2.5 h-5 bg-[#4F7CFF] rounded-full" style={{ background: color.gradient }} />
+                    📈 14-Day Sales History
+                  </h3>
+                  <div className="h-[280px]">
+                    <HistoryChart 
+                      dates={salesData.history_dates || []} 
+                      unitsSold={salesData.history_units || []} 
+                      product={selected.name} 
+                      chartColor={color.text} 
+                    />
                   </div>
-                  <span className="px-3 py-1 rounded-full text-xs font-bold"
-                    style={{ background: color.light, color: color.text, border: `1px solid ${color.border}` }}>
-                    {salesData.dates.length} day forecast
+                </div>
+
+                {/* 7-Day Forecast Chart */}
+                <div className="glass-panel p-6 overflow-hidden animate-fade-in-up" style={{ borderColor: color.border }}>
+                  <h3 className="text-base font-bold text-[#1E293B] mb-4 flex items-center gap-2">
+                    <span className="w-2.5 h-5 bg-[#22C55E] rounded-full" />
+                    🔮 7-Day Future Projection
+                  </h3>
+                  <div className="h-[280px]">
+                    <ForecastChart forecast={salesData.units_sold || []} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass-panel p-5 flex flex-wrap items-center justify-between gap-4" style={{ borderColor: color.border }}>
+                <div>
+                  <p className="text-sm font-bold text-[#1E293B]">🔮 Smart Clearance Insights</p>
+                  <p className="text-xs text-[#94A3B8] mt-0.5">Calculated stockout rate relative to current stock</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#475569]">Stockout countdown:</span>
+                  <span className="text-sm font-black px-4 py-1.5 rounded-xl text-white bg-indigo-600 shadow-md">
+                    {salesData.stockout_days === 999 || salesData.stockout_days === "N/A" ? "Healthy (∞)" : `${salesData.stockout_days} days`}
                   </span>
                 </div>
+              </div>
 
-                {/* Summary stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                  {[
-                    { label: "Total Sales",  value: totalSales, icon: "📦" },
-                    { label: "Peak Day",     value: maxSales,   icon: "🚀" },
-                    { label: "Lowest Day",   value: minSales,   icon: "📉" },
-                    { label: "Daily Avg",    value: avgSales,   icon: "📊" },
-                  ].map((s, i) => (
-                    <div key={i} className="rounded-xl p-3 text-center"
-                      style={{ background: color.light, border: `1px solid ${color.border}` }}>
-                      <div className="text-xl mb-1">{s.icon}</div>
-                      <p className="text-lg font-black" style={{ color: color.text }}>{s.value}</p>
-                      <p className="text-[10px] text-[#94A3B8] uppercase font-semibold tracking-wider mt-0.5">{s.label}</p>
+              <div className="glass-panel overflow-hidden" style={{ borderColor: color.border }}>
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <div>
+                      <h3 className="text-lg font-bold text-[#1E293B]">🔮 7-Day Predicted Sales Log</h3>
+                      <p className="text-xs text-[#94A3B8] mt-0.5">
+                        {salesData?.source === "gru_model"
+                          ? "🤖 GRU Neural Network · Real future dates"
+                          : "🧠 AI-simulated forecast · Real future dates"}
+                      </p>
                     </div>
-                  ))}
-                </div>
-
-                {/* Data table */}
-                <div className="rounded-2xl overflow-hidden border" style={{ borderColor: color.border }}>
-                  <div className="px-4 py-3 flex justify-between items-center"
-                    style={{ background: color.light }}>
-                    <h4 className="font-bold text-sm text-[#1E293B]">📅 7-Day Predicted Sales Log</h4>
-                    <span className="text-xs text-[#94A3B8]">{salesData.dates.length} days forecast</span>
+                    <span className="px-3 py-1 rounded-full text-xs font-bold"
+                      style={{ background: color.light, color: color.text, border: `1px solid ${color.border}` }}>
+                      {salesData.dates?.length || 0} day forecast
+                    </span>
                   </div>
-                  <div className="overflow-x-auto max-h-72">
-                    <table className="w-full text-left">
-                      <thead className="bg-[#F8FAFC] sticky top-0">
-                        <tr>
-                          {["Day", "Date", "Predicted Units", "vs Avg", "Demand"].map(h => (
-                            <th key={h} className="px-4 py-3 text-xs font-bold text-[#94A3B8] uppercase tracking-wider">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {salesData.dates.map((d, i) => {
-                          const val = salesData.units_sold[i];
-                          const diff = val - avgSales;
-                          const isAbove = diff >= 0;
-                          return (
-                            <tr key={d} className="border-t border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
-                              <td className="px-4 py-3 text-xs font-mono text-[#94A3B8]">{i + 1}</td>
-                              <td className="px-4 py-3 text-sm text-[#475569] font-medium">{d}</td>
-                              <td className="px-4 py-3">
-                                <span className="inline-flex px-3 py-1 rounded-lg text-sm font-bold"
-                                  style={{ background: color.light, color: color.text, border: `1px solid ${color.border}` }}>
-                                  {val} units
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={`text-xs font-bold ${isAbove ? "text-[#16A34A]" : "text-[#E11D48]"}`}>
-                                  {isAbove ? "▲" : "▼"} {Math.abs(diff)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="w-20">
-                                  <MiniBar value={val} max={maxSales} color={color.text} />
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+
+                  {/* Summary stats */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                    {[
+                      { label: "Total Sales",  value: totalSales, icon: "📦" },
+                      { label: "Peak Day",     value: maxSales,   icon: "🚀" },
+                      { label: "Lowest Day",   value: minSales,   icon: "📉" },
+                      { label: "Daily Avg",    value: avgSales,   icon: "📊" },
+                    ].map((s, i) => (
+                      <div key={i} className="rounded-xl p-3 text-center"
+                        style={{ background: color.light, border: `1px solid ${color.border}` }}>
+                        <div className="text-xl mb-1">{s.icon}</div>
+                        <p className="text-lg font-black" style={{ color: color.text }}>{s.value}</p>
+                        <p className="text-[10px] text-[#94A3B8] uppercase font-semibold tracking-wider mt-0.5">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Data table */}
+                  <div className="rounded-2xl overflow-hidden border" style={{ borderColor: color.border }}>
+                    <div className="px-4 py-3 flex justify-between items-center"
+                      style={{ background: color.light }}>
+                      <h4 className="font-bold text-sm text-[#1E293B]">📅 Forecast Table</h4>
+                      <span className="text-xs text-[#94A3B8]">{salesData.dates?.length || 0} days forecast</span>
+                    </div>
+                    <div className="overflow-x-auto max-h-72">
+                      <table className="w-full text-left">
+                        <thead className="bg-[#F8FAFC] sticky top-0">
+                          <tr>
+                            {["Day", "Date", "Predicted Units", "vs Avg", "Demand"].map(h => (
+                              <th key={h} className="px-4 py-3 text-xs font-bold text-[#94A3B8] uppercase tracking-wider">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {salesData.dates?.map((d, i) => {
+                            const val = salesData.units_sold[i];
+                            const diff = val - avgSales;
+                            const isAbove = diff >= 0;
+                            return (
+                              <tr key={d} className="border-t border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
+                                <td className="px-4 py-3 text-xs font-mono text-[#94A3B8]">{i + 1}</td>
+                                <td className="px-4 py-3 text-sm text-[#475569] font-medium">{d}</td>
+                                <td className="px-4 py-3">
+                                  <span className="inline-flex px-3 py-1 rounded-lg text-sm font-bold"
+                                    style={{ background: color.light, color: color.text, border: `1px solid ${color.border}` }}>
+                                    {val} units
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`text-xs font-bold ${isAbove ? "text-[#16A34A]" : "text-[#E11D48]"}`}>
+                                    {isAbove ? "▲" : "▼"} {Math.abs(diff)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="w-20">
+                                    <MiniBar value={val} max={maxSales} color={color.text} />
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -341,8 +440,8 @@ export default function History() {
           {!loading && !salesData && (
             <div className="glass-panel p-8 text-center">
               <div className="text-4xl mb-3">📊</div>
-              <h3 className="text-lg font-bold text-[#1E293B] mb-2">Loading Chart…</h3>
-              <p className="text-[#94A3B8] text-sm">Select a product to view its 30-day sales graph.</p>
+              <h3 className="text-lg font-bold text-[#1E293B] mb-2">No Analytics Available</h3>
+              <p className="text-[#94A3B8] text-sm">Select a product to view its sales history.</p>
             </div>
           )}
 

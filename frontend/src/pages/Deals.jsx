@@ -155,6 +155,7 @@ export default function Deals() {
   const [message, setMessage]     = useState("");
   const [msgType, setMsgType]     = useState("ok");
   const [filterPct, setFilterPct] = useState("all");
+  const [showCustomModal, setShowCustomModal] = useState(false);
 
   useEffect(() => { refreshAndFetch(); }, []);
 
@@ -265,6 +266,10 @@ export default function Deals() {
               className="px-4 py-3 rounded-xl font-bold deals-refresh-btn shadow-md transition-all hover:scale-105 active:scale-95 disabled:opacity-60">
               {refreshing ? "⏳" : "🔄"} Refresh
             </button>
+            <button onClick={() => setShowCustomModal(true)} disabled={loading}
+              className="px-5 py-3 rounded-xl font-bold text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-60 bg-gradient-to-r from-indigo-500 to-purple-600">
+              ➕ Create Custom Deal
+            </button>
             <button onClick={applyDiscounts} disabled={applying}
               className="px-5 py-3 rounded-xl font-bold text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-60"
               style={{ background: "linear-gradient(135deg, #E11D48, #BE123C)" }}>
@@ -350,6 +355,187 @@ export default function Deals() {
           ))}
         </div>
       )}
+
+      {showCustomModal && (
+        <CustomDealModal 
+          products={products} 
+          onClose={() => setShowCustomModal(false)} 
+          onSuccess={async () => {
+            setShowCustomModal(false);
+            await refreshAndFetch();
+            flash("Custom deal created successfully!");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Custom Deal Creation Modal ────────────────────────────────────────── */
+function CustomDealModal({ products, onClose, onSuccess }) {
+  const [selectedId, setSelectedId] = useState(products[0]?.id || "");
+  const [discountPct, setDiscountPct] = useState(20);
+  const [durationType, setDurationType] = useState("manual"); // manual | auto
+  const [durationDays, setDurationDays] = useState(30);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleApply = async (e) => {
+    e.preventDefault();
+    if (!selectedId) {
+      setError("Please select a product.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+    const getToken = () => localStorage.getItem("supply_token") || "";
+    try {
+      await axios.post(`${API}/inventory/${selectedId}/discount`, {
+        discount_pct: Number(discountPct),
+        reason: reason,
+        duration_type: durationType,
+        duration_days: Number(durationDays)
+      }, {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to create deal.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={onClose}>
+      <div className="glass-panel-strong w-full max-w-md p-6 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-5">
+          <div>
+            <h3 className="font-bold text-lg text-[#1E293B]">➕ Create Custom Deal</h3>
+            <p className="text-xs text-[#94A3B8]">Apply custom discount percentage and duration</p>
+          </div>
+          <button onClick={onClose} className="text-2xl text-[#94A3B8] hover:text-[#1E293B]">✕</button>
+        </div>
+
+        <form onSubmit={handleApply} className="space-y-4">
+          {error && (
+            <p className="text-xs font-bold text-red-500 bg-red-100 p-2 rounded-lg">{error}</p>
+          )}
+
+          <div>
+            <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8] mb-2 px-1">Select Product</label>
+            <select
+              className="input-grocery w-full bg-[#0B0F14] py-3 text-sm"
+              value={selectedId}
+              onChange={e => setSelectedId(e.target.value)}
+            >
+              <option value="">-- Choose a product --</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} (Stock: {p.stock} · ₹{p.price})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-2 px-1">
+              <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8]">Discount Percentage</label>
+              <span className="text-sm font-black text-indigo-500">{discountPct}% OFF</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="90"
+              value={discountPct}
+              onChange={e => setDiscountPct(Number(e.target.value))}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+              style={{ accentColor: "#4F7CFF" }}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8] mb-2 px-1">Duration Mode</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDurationType("auto")}
+                className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                  durationType === "auto"
+                    ? "bg-indigo-500 border-transparent text-white shadow-md shadow-indigo-500/20"
+                    : "bg-[#0B0F14] border-[rgba(0,0,0,0.08)] text-[#94A3B8] hover:bg-[rgba(0,0,0,0.02)]"
+                }`}
+              >
+                🤖 AI Calculated
+              </button>
+              <button
+                type="button"
+                onClick={() => setDurationType("manual")}
+                className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                  durationType === "manual"
+                    ? "bg-indigo-500 border-transparent text-white shadow-md shadow-indigo-500/20"
+                    : "bg-[#0B0F14] border-[rgba(0,0,0,0.08)] text-[#94A3B8] hover:bg-[rgba(0,0,0,0.02)]"
+                }`}
+              >
+                ✍️ Custom Days
+              </button>
+            </div>
+            <p className="text-[10px] text-[#94A3B8] mt-1.5 px-1 italic">
+              {durationType === "auto" 
+                ? "AI calculates dynamic clearance days based on excess stock levels and velocity."
+                : "Enter your own custom sale duration in days."}
+            </p>
+          </div>
+
+          {durationType === "manual" && (
+            <div>
+              <div className="flex justify-between items-center mb-2 px-1">
+                <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8]">Custom Duration (Days)</label>
+                <span className="text-sm font-black text-indigo-500">{durationDays} days</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="90"
+                value={durationDays}
+                onChange={e => setDurationDays(Number(e.target.value))}
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                style={{ accentColor: "#4F7CFF" }}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8] mb-2 px-1">Reason (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Festival clearance sale..."
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              className="input-grocery w-full py-3 text-sm"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 text-sm font-semibold rounded-xl bg-white border border-[#E8EDFF] text-[#475569] hover:bg-[#F8FAFC] transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 py-3 text-sm font-black rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-60"
+            >
+              {submitting ? "Saving..." : "Apply Deal"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

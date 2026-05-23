@@ -390,8 +390,8 @@ def history(product_name: str):
             "units_sold": last_30["Units_Sold"].tolist()}
 
 @app.get("/history/db/{product_id}")
-def history_db(product_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Return 7-day FUTURE sales forecast with real calendar dates for any DB product."""
+def history_db(product_id: int, demo: bool = False, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Return sales history and demand forecast. Supports real database sales or optional demo mode."""
     item = db.query(InventoryItemDB).filter(
         InventoryItemDB.id == product_id,
         InventoryItemDB.user_id == current_user["id"]
@@ -399,11 +399,73 @@ def history_db(product_id: int, current_user: dict = Depends(get_current_user), 
     if not item:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found.")
 
-    # Future dates: tomorrow → 7 days ahead
     today = datetime.utcnow().date()
     future_dates = [(today + timedelta(days=i + 1)) for i in range(7)]
 
-    # --- Use GRU model for the 5 CSV-trained products ---
+    # --- Mode A: Real Database Sales (demo = False) ---
+    if not demo:
+        # Get actual sales of this product from SQLite Order DB for current user
+        order_items = db.query(OrderItemDB).join(OrderDB).filter(
+            OrderItemDB.product_id == product_id,
+            OrderDB.user_id == current_user["id"]
+        ).all()
+
+        # Set up past 14 days calendar dates
+        past_dates = [(today - timedelta(days=i)) for i in range(14)]
+        past_dates.reverse() # oldest to newest (chronological)
+        date_strs = [str(d) for d in past_dates]
+
+        # Aggregate quantities sold on each calendar date
+        sales_map = {d: 0 for d in date_strs}
+        for oi in order_items:
+            if oi.order and oi.order.created_at:
+                o_date_str = oi.order.created_at.split("T")[0]
+                if o_date_str in sales_map:
+                    sales_map[o_date_str] += oi.quantity
+
+        history_units = [sales_map[d] for d in date_strs]
+        total_units_sold = sum(history_units)
+
+        # If they have no actual sales history yet, return an empty state
+        if total_units_sold == 0:
+            return {
+                "product": item.name,
+                "product_id": item.id,
+                "dates": [],
+                "units_sold": [],
+                "history_dates": [],
+                "history_units": [],
+                "stockout_days": "N/A",
+                "source": "actual_empty",
+                "demo_available": True
+            }
+
+        # Calculate daily sales average
+        avg_daily_sale = round(total_units_sold / 14, 2)
+        
+        # Calculate future 7-day projection using their average
+        forecast = [max(1, round(avg_daily_sale)) for _ in range(7)]
+        
+        # Calculate stockout countdown
+        stockout_days = math.ceil(item.stock / avg_daily_sale) if avg_daily_sale > 0 else 999
+
+        return {
+            "product": item.name,
+            "product_id": item.id,
+            "dates": [str(d) for d in future_dates],
+            "units_sold": forecast,
+            "history_dates": date_strs,
+            "history_units": history_units,
+            "stockout_days": stockout_days,
+            "source": "actual_sales",
+            "demo_available": True
+        }
+
+    # --- Mode B: Demo/Simulated Mode (demo = True) ---
+    # Retrieve simulated/GRU 14-day history
+    hist_dates = [str(today - timedelta(days=i)) for i in range(14)]
+    hist_dates.reverse()
+
     if item.name in PRODUCT_ENCODING and df is not None and not df.empty:
         product_df = df[df["Product_Name"] == item.name].sort_values("Date")
         if len(product_df) >= 14:
@@ -413,19 +475,35 @@ def history_db(product_id: int, current_user: dict = Depends(get_current_user), 
                 raw_pred = model(input_tensor).squeeze(0)
             us_min, us_max = norm_dict["Units_Sold"]
             forecast = [max(1, round(float(v * (us_max - us_min) + us_min))) for v in raw_pred]
+            history_units = last_14["Units_Sold"].tolist()
+            
+            avg_daily_sale = sum(history_units) / 14
+            stockout_days = math.ceil(item.stock / avg_daily_sale) if avg_daily_sale > 0 else 999
+            
             return {
                 "product": item.name,
                 "product_id": item.id,
                 "dates": [str(d) for d in future_dates],
                 "units_sold": forecast[:7],
-                "source": "gru_model"
+                "history_dates": [str(d.date()) for d in last_14["Date"]],
+                "history_units": history_units,
+                "stockout_days": stockout_days,
+                "source": "gru_model",
+                "demo_available": True
             }
 
-    # --- Simulated 7-day forecast for all other DB products ---
+    # Simulated history for other products
     min_s = item.minStock if item.minStock > 0 else 5
     base_daily = max(1, round(min_s * 0.5))
-    rng = abs(hash(item.name)) % 1000  # deterministic per product
+    rng = abs(hash(item.name)) % 1000
 
+    hist_units = []
+    for i in range(14):
+        wave = 1.0 + 0.3 * math.sin((i + rng) * 0.5)
+        val = max(1, round(base_daily * wave))
+        hist_units.append(val)
+
+    # Simulated future forecast
     units_sold = []
     for i, d in enumerate(future_dates):
         dow_factor = 1.3 if d.weekday() >= 5 else 1.0
@@ -434,12 +512,19 @@ def history_db(product_id: int, current_user: dict = Depends(get_current_user), 
         val = max(1, round(base_daily * dow_factor * wave * (1 + noise)))
         units_sold.append(val)
 
+    avg_daily_sale = sum(hist_units) / 14
+    stockout_days = math.ceil(item.stock / avg_daily_sale) if avg_daily_sale > 0 else 999
+
     return {
         "product": item.name,
         "product_id": item.id,
         "dates": [str(d) for d in future_dates],
         "units_sold": units_sold,
-        "source": "ai_forecast"
+        "history_dates": hist_dates,
+        "history_units": hist_units,
+        "stockout_days": stockout_days,
+        "source": "ai_forecast",
+        "demo_available": True
     }
 
 # --- Inventory CRUD ---------------------------------------------------------
@@ -557,23 +642,55 @@ def adjust_stock(product_id: int, body: StockAdjustment, current_user: dict = De
 class SetDiscountRequest(BaseModel):
     discount_pct: float
     reason: str = ""
-    duration_days: int = 30  # default 30-day sale for manual discounts
+    duration_type: str = "manual"  # "manual" or "auto"
+    duration_days: int = 30  # only used if duration_type is "manual"
 
 @app.post("/inventory/{product_id}/discount")
 def set_discount(product_id: int, body: SetDiscountRequest, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Manually set a discount on a specific product with a sale duration timer."""
+    """Manually set a discount on a specific product with a sale duration timer (supports manual and auto durations)."""
     db_item = db.query(InventoryItemDB).filter(InventoryItemDB.id == product_id, InventoryItemDB.user_id == current_user["id"]).first()
     if not db_item:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found.")
     if body.discount_pct < 0 or body.discount_pct > 90:
         raise HTTPException(status_code=400, detail="Discount must be between 0 and 90%.")
 
-    duration = max(1, min(body.duration_days, 90))  # clamp between 1 and 90 days
+    if body.duration_type == "auto":
+        # Calculate dynamic duration based on stock levels and daily sales velocity
+        min_s = db_item.minStock if db_item.minStock > 0 else 5
+        avg_daily_sale = max(1, round(min_s * 0.7))
+        
+        # Get velocity multiplier based on chosen pct
+        if body.discount_pct >= 70:
+            velocity_multiplier = 3.0
+        elif body.discount_pct >= 50:
+            velocity_multiplier = 2.0
+        elif body.discount_pct >= 30:
+            velocity_multiplier = 1.5
+        elif body.discount_pct >= 15:
+            velocity_multiplier = 1.2
+        else:
+            velocity_multiplier = 1.0
+            
+        safety_buffer = max(min_s, round(min_s * 1.5))
+        excess_stock = max(0, db_item.stock - safety_buffer)
+        accelerated_daily = avg_daily_sale * velocity_multiplier
+        
+        if excess_stock > 0 and accelerated_daily > 0:
+            days_to_clear = math.ceil(excess_stock / accelerated_daily)
+        else:
+            days_to_clear = 14 # default minimal duration
+            
+        duration = max(7, min(60, days_to_clear)) # clamp duration between 7 and 60 days
+        reason = body.reason or f"AI clearance deal ({duration} days sale to clear excess stock)"
+    else:
+        duration = max(1, min(body.duration_days, 90))  # clamp between 1 and 90 days
+        reason = body.reason or f"Custom {body.discount_pct}% off — Limited time sale"
+
     expires_at = (datetime.utcnow() + timedelta(days=duration)).isoformat()
 
     db_item.discount_pct = body.discount_pct
-    db_item.discount_reason = body.reason or f"Custom {body.discount_pct}% off — Limited time sale"
-    db_item.discount_type = "manual"
+    db_item.discount_reason = reason
+    db_item.discount_type = "manual"  # keep "manual" to prevent auto-overwrites
     db_item.discount_duration_days = duration
     db_item.discount_expires_at = expires_at
     db.commit()

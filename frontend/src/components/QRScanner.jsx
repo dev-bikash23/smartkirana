@@ -14,9 +14,19 @@ export default function QRScanner({ onClose }) {
   useEffect(() => {
     Html5Qrcode.getCameras()
       .then((devices) => {
-        if (devices && devices.length > 0) {
           setCameras(devices);
-          setCameraId(devices[0].id);
+          const backCam = devices.find(d => 
+            d.label.toLowerCase().includes("back") || 
+            d.label.toLowerCase().includes("rear") ||
+            d.label.toLowerCase().includes("environment")
+          );
+          if (backCam) {
+            setCameraId(backCam.id);
+          } else if (devices.length > 1) {
+            setCameraId(devices[1].id);
+          } else {
+            setCameraId(devices[0].id);
+          }
         } else {
           setErrorMsg("No camera detected on this hardware.");
           setStatus("error");

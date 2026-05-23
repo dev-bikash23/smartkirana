@@ -217,8 +217,21 @@ function QRScannerModal({ onClose }) {
   useEffect(() => {
     Html5Qrcode.getCameras()
       .then(devs => {
-        if (devs && devs.length > 0) { setCameras(devs); setCameraId(devs[0].id); }
-        else { setErrorMsg("No camera detected."); setScanStatus("error"); }
+        if (devs && devs.length > 0) {
+          setCameras(devs);
+          const backCam = devs.find(d => 
+            d.label.toLowerCase().includes("back") || 
+            d.label.toLowerCase().includes("rear") ||
+            d.label.toLowerCase().includes("environment")
+          );
+          if (backCam) {
+            setCameraId(backCam.id);
+          } else if (devs.length > 1) {
+            setCameraId(devs[1].id);
+          } else {
+            setCameraId(devs[0].id);
+          }
+        } else { setErrorMsg("No camera detected."); setScanStatus("error"); }
       })
       .catch(() => { setErrorMsg("Camera access denied."); setScanStatus("error"); });
     return () => stopScanner();
