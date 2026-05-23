@@ -276,7 +276,7 @@ function ProductCard({ product, onDelete, onAdjust, onQR, onDiscount, onAI }) {
             <span className="text-sm font-black text-[#C2410C]">{discVal}%</span>
           </div>
           <input type="range" min="0" max="90" value={discVal} onChange={e => setDiscVal(Number(e.target.value))}
-            className="w-full h-1.5 rounded-full appearance-none cursor-pointer" style={{ accentColor: "#E11D48" }} />
+            className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-orange-200 dark:bg-slate-700 focus:outline-none" style={{ accentColor: "#E11D48" }} />
           <div className="flex gap-2">
             <button onClick={handleSetDiscount} className="flex-1 py-1.5 text-xs rounded-xl font-bold bg-[#E11D48] text-white hover:bg-[#BE123C] transition-all">
               Apply {discVal}%

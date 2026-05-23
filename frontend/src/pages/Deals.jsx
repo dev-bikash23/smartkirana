@@ -425,7 +425,7 @@ function CustomDealModal({ products, onClose, onSuccess }) {
           )}
 
           <div>
-            <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8] mb-2 px-1">Select Product</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">Select Product</label>
             <select
               className="input-grocery w-full bg-[#0B0F14] py-3 text-sm"
               value={selectedId}
@@ -441,9 +441,9 @@ function CustomDealModal({ products, onClose, onSuccess }) {
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-2 px-1">
-              <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8]">Discount Percentage</label>
-              <span className="text-sm font-black text-indigo-500">{discountPct}% OFF</span>
+            <div className="flex justify-between items-center mb-1.5 px-1">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Discount Percentage</label>
+              <span className="text-sm font-bold text-indigo-500">{discountPct}% OFF</span>
             </div>
             <input
               type="range"
@@ -451,13 +451,13 @@ function CustomDealModal({ products, onClose, onSuccess }) {
               max="90"
               value={discountPct}
               onChange={e => setDiscountPct(Number(e.target.value))}
-              className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200 dark:bg-slate-700 focus:outline-none"
               style={{ accentColor: "#4F7CFF" }}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8] mb-2 px-1">Duration Mode</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">Duration Mode</label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -491,9 +491,9 @@ function CustomDealModal({ products, onClose, onSuccess }) {
 
           {durationType === "manual" && (
             <div>
-              <div className="flex justify-between items-center mb-2 px-1">
-                <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8]">Custom Duration (Days)</label>
-                <span className="text-sm font-black text-indigo-500">{durationDays} days</span>
+              <div className="flex justify-between items-center mb-1.5 px-1">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Custom Duration (Days)</label>
+                <span className="text-sm font-bold text-indigo-500">{durationDays} days</span>
               </div>
               <input
                 type="range"
@@ -501,14 +501,14 @@ function CustomDealModal({ products, onClose, onSuccess }) {
                 max="90"
                 value={durationDays}
                 onChange={e => setDurationDays(Number(e.target.value))}
-                className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200 dark:bg-slate-700 focus:outline-none"
                 style={{ accentColor: "#4F7CFF" }}
               />
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-black uppercase tracking-widest text-[#94A3B8] mb-2 px-1">Reason (Optional)</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">Reason (Optional)</label>
             <input
               type="text"
               placeholder="e.g. Festival clearance sale..."
@@ -529,7 +529,7 @@ function CustomDealModal({ products, onClose, onSuccess }) {
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 py-3 text-sm font-black rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-60"
+              className="flex-1 py-3 text-sm font-semibold rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-60"
             >
               {submitting ? "Saving..." : "Apply Deal"}
             </button>

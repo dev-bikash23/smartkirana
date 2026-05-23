@@ -60,7 +60,7 @@ export default function ForecastPanel() {
         </h2>
         <div className="flex flex-col lg:flex-row gap-8 items-end">
           <div className="flex-1 w-full">
-            <label className="block text-xs font-black uppercase tracking-widest text-[#4A5568] mb-3 px-1">Target Product</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">Target Product</label>
             <select 
               value={selectedProduct} 
               onChange={(e) => setSelectedProduct(e.target.value)}
@@ -70,7 +70,7 @@ export default function ForecastPanel() {
             </select>
           </div>
           <div className="flex-1 w-full">
-            <label className="block text-xs font-black uppercase tracking-widest text-[#4A5568] mb-3 px-1">Physical Inventory Level</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">Physical Inventory Level</label>
             <input 
               type="number" 
               placeholder="Enter current units..." 

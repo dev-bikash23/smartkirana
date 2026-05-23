@@ -116,7 +116,7 @@ export default function QRScanner({ onClose }) {
           {/* Camera Selector */}
           {cameras.length > 1 && status === "idle" && (
             <div className="mb-8">
-              <label className="block text-xs font-black uppercase tracking-widest text-[#4A5568] mb-3 px-1">Hardware Source</label>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">Hardware Source</label>
               <select
                 className="input-grocery w-full bg-[#0B0F14] py-4"
                 value={cameraId}
