@@ -130,15 +130,17 @@ export default function QRScanner({ onClose }) {
           )}
 
           {/* Viewfinder */}
-          <div
-            id="qr-scanner-region"
-            className="rounded-3xl overflow-hidden bg-black shadow-2xl border border-[rgba(255,255,255,0.05)]"
+          <div className="relative rounded-3xl overflow-hidden bg-black shadow-2xl border border-[rgba(255,255,255,0.05)]"
             style={{
               width: "100%",
               minHeight: status === "scanning" ? "300px" : "0px",
               display: status === "scanning" ? "block" : "none",
-            }}
-          />
+            }}>
+            <div id="qr-scanner-region" style={{ width: "100%", minHeight: "300px" }} />
+            {status === "scanning" && (
+              <div className="absolute left-0 right-0 h-0.5 bg-[#00FFC6] shadow-[0_0_8px_#00FFC6] animate-scan z-10" />
+            )}
+          </div>
 
           {/* Idle State */}
           {status === "idle" && (

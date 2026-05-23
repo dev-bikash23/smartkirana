@@ -415,8 +415,13 @@ function QRScannerModal({ onClose }) {
           )}
 
           {/* Viewfinder */}
-          <div id="qr-modal-region" className="rounded-2xl overflow-hidden bg-black"
-            style={{ minHeight: scanStatus === "scanning" ? "280px" : "0", display: scanStatus === "scanning" ? "block" : "none" }} />
+          <div className="relative rounded-2xl overflow-hidden bg-black"
+            style={{ minHeight: scanStatus === "scanning" ? "280px" : "0", display: scanStatus === "scanning" ? "block" : "none" }}>
+            <div id="qr-modal-region" style={{ width: "100%", minHeight: "280px" }} />
+            {scanStatus === "scanning" && (
+              <div className="absolute left-0 right-0 h-0.5 bg-[#4F7CFF] shadow-[0_0_8px_#4F7CFF] animate-scan z-10" />
+            )}
+          </div>
 
           {/* States */}
           {(scanStatus === "idle" || scanStatus === "scanned" || scanStatus === "scan_error") && (
