@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import axios from "axios";
 import Navbar from "./components/Navbar";
 import Dashboard from "./pages/Dashboard";
@@ -24,6 +24,10 @@ export const useAuth = () => useContext(AuthContext);
 const ThemeContext = createContext(null);
 export const useTheme = () => useContext(ThemeContext);
 
+/* ── Server Status Context ───────────────────────────────────────────── */
+const ServerContext = createContext(null);
+export const useServer = () => useContext(ServerContext);
+
 function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => localStorage.getItem("sk_theme") || "light");
 
@@ -41,11 +45,136 @@ function ThemeProvider({ children }) {
   );
 }
 
+/* ── Server Wakeup Banner ────────────────────────────────────────────── */
+function ServerWakeupBanner({ onRetrySuccess }) {
+  const [dots, setDots]     = useState(0);
+  const [seconds, setSeconds] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+
+  useEffect(() => {
+    const dotInterval = setInterval(() => setDots(d => (d + 1) % 4), 600);
+    const secInterval = setInterval(() => setSeconds(s => s + 1), 1000);
+    return () => { clearInterval(dotInterval); clearInterval(secInterval); };
+  }, []);
+
+  // Auto-retry every 5 seconds
+  useEffect(() => {
+    const retry = async () => {
+      try {
+        setRetrying(true);
+        await axios.get("/ping", { timeout: 8000 });
+        onRetrySuccess();
+      } catch {
+        setRetrying(false);
+      }
+    };
+    retry(); // immediate first try
+    const interval = setInterval(retry, 5000);
+    return () => clearInterval(interval);
+  }, [onRetrySuccess]);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "linear-gradient(135deg, #0D0B1F 0%, #12103A 55%, #0D0B1F 100%)",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      fontFamily: "'Poppins', sans-serif",
+    }}>
+      {/* Glowing logo */}
+      <div style={{
+        width: 88, height: 88, borderRadius: 28,
+        background: "linear-gradient(135deg, #6C63FF, #9D97FF)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        boxShadow: "0 0 60px rgba(108,99,255,0.55)",
+        marginBottom: 28, overflow: "hidden",
+        animation: "pulse 2s ease-in-out infinite",
+      }}>
+        <img src="/logo.png" alt="SmartKirana" style={{ width: 60, height: 60, objectFit: "contain" }} />
+      </div>
+
+      <h2 style={{ color: "#F0EEFF", fontWeight: 800, fontSize: 22, margin: "0 0 8px" }}>
+        SmartKirana
+      </h2>
+      <p style={{ color: "#9D97FF", fontSize: 14, fontWeight: 500, margin: "0 0 28px" }}>
+        Server is waking up{".".repeat(dots + 1)}
+      </p>
+
+      {/* Animated progress bar */}
+      <div style={{
+        width: 240, height: 4, background: "rgba(255,255,255,0.08)",
+        borderRadius: 4, overflow: "hidden", marginBottom: 16,
+      }}>
+        <div style={{
+          height: "100%",
+          background: "linear-gradient(90deg, #6C63FF, #1BCDFE)",
+          borderRadius: 4,
+          animation: "wakeupSlide 5s linear infinite",
+        }} />
+      </div>
+
+      <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 12, margin: 0 }}>
+        {retrying ? "⚡ Retrying…" : `Elapsed: ${seconds}s — Auto-retrying every 5s`}
+      </p>
+      <p style={{ color: "rgba(255,255,255,0.20)", fontSize: 11, margin: "8px 0 0" }}>
+        Free-tier server starts in ~30 seconds
+      </p>
+
+      <style>{`
+        @keyframes pulse {
+          0%,100% { box-shadow: 0 0 40px rgba(108,99,255,0.45); }
+          50%      { box-shadow: 0 0 80px rgba(108,99,255,0.75); }
+        }
+        @keyframes wakeupSlide {
+          0%   { width: 0%; margin-left: 0; }
+          50%  { width: 70%; margin-left: 0; }
+          100% { width: 0%; margin-left: 100%; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 /* ── Auth Provider ───────────────────────────────────────────────────── */
 function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [serverDown, setServerDown] = useState(false);
+  const keepAliveRef = useRef(null);
 
+  /* ── Keep-alive ping every 12 minutes ───────────────────────────── */
+  useEffect(() => {
+    const ping = async () => {
+      try {
+        await axios.get("/ping", { timeout: 6000 });
+        setServerDown(false);
+      } catch (err) {
+        if (!err.response) setServerDown(true); // network error = server sleeping
+      }
+    };
+
+    // Ping immediately on mount
+    ping();
+    keepAliveRef.current = setInterval(ping, 12 * 60 * 1000); // every 12 min
+    return () => clearInterval(keepAliveRef.current);
+  }, []);
+
+  /* ── Axios response interceptor — detect server sleeping ─────────── */
+  useEffect(() => {
+    const id = axios.interceptors.response.use(
+      (res) => { setServerDown(false); return res; },
+      (err) => {
+        // Network error with no response = server is down/sleeping
+        if (!err.response && (err.code === "ERR_NETWORK" || err.code === "ECONNABORTED" || err.message === "Network Error")) {
+          setServerDown(true);
+        }
+        return Promise.reject(err);
+      }
+    );
+    return () => axios.interceptors.response.eject(id);
+  }, []);
+
+  /* ── Restore session from stored token ──────────────────────────── */
   useEffect(() => {
     const token = localStorage.getItem("supply_token");
     if (token) {
@@ -76,6 +205,15 @@ function AuthProvider({ children }) {
     axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
     const u = res.data.user;
     setUser({ id: u.id, name: u.name, shopName: u.shopName, email: u.email });
+    setServerDown(false);
+  };
+
+  /* loginWithToken is called after OTP verification — token already obtained */
+  const loginWithToken = (token, userData) => {
+    localStorage.setItem("supply_token", token);
+    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    setUser({ id: userData.id, name: userData.name, shopName: userData.shopName, email: userData.email });
+    setServerDown(false);
   };
 
   const register = async (userData) => {
@@ -90,6 +228,22 @@ function AuthProvider({ children }) {
     localStorage.removeItem("supply_token");
     delete axios.defaults.headers.common["Authorization"];
   };
+
+  /* Server wakeup full-screen banner */
+  if (serverDown) {
+    return <ServerWakeupBanner onRetrySuccess={() => {
+      setServerDown(false);
+      // Re-check auth after server wakes up
+      const token = localStorage.getItem("supply_token");
+      if (token) {
+        axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+        axios.get("/auth/me").then(res => {
+          const u = res.data;
+          setUser({ id: u.id, name: u.name, shopName: u.shopName, email: u.email });
+        }).catch(() => {});
+      }
+    }} />;
+  }
 
   if (loading) return (
     <div style={{
@@ -121,7 +275,7 @@ function AuthProvider({ children }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, login, loginWithToken, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

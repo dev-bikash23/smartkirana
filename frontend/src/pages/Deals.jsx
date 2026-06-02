@@ -270,11 +270,6 @@ export default function Deals() {
               className="px-5 py-3 rounded-xl font-bold text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-60 bg-gradient-to-r from-indigo-500 to-purple-600">
               ➕ Create Custom Deal
             </button>
-            <button onClick={applyDiscounts} disabled={applying}
-              className="px-5 py-3 rounded-xl font-bold text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-60"
-              style={{ background: "linear-gradient(135deg, #E11D48, #BE123C)" }}>
-              {applying ? "Analyzing…" : "🤖 Apply AI Discounts"}
-            </button>
           </div>
         </div>
       </div>
@@ -336,11 +331,11 @@ export default function Deals() {
       ) : filtered.length === 0 ? (
         <div className="glass-panel p-16 flex flex-col items-center gap-4 text-center">
           <div className="text-6xl">🛍️</div>
-          <h3 className="text-xl font-bold deals-heading">No Active Deals</h3>
+          <h3 className="text-xl font-bold deals-heading">No Active Deals Yet</h3>
           <p className="deals-empty-text text-sm max-w-sm">
-            Click <strong>"Apply AI Discounts"</strong> to let the AI analyze your inventory
-            category-wise and auto-apply discounts (15% → 30% → 50% → 70%) to slow-moving
-            excess stock only. Sale durations: 15-day or 30-day timers per tier.
+            Click <strong>「➕ Create Custom Deal」</strong> to set a discount on any product.
+            AI-based discounts are applied automatically in the background whenever slow-moving
+            excess stock is detected.
           </p>
         </div>
       ) : (

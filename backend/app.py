@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 import auth as auth_utils
-from database import init_db, get_db, UserDB, InventoryItemDB, OrderDB, OrderItemDB
+from database import init_db, get_db, UserDB, InventoryItemDB, OrderDB, OrderItemDB, PendingRegistrationDB
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -73,6 +73,14 @@ app.add_middleware(CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=r"https://.*\.vercel\.app",   # Allow all Vercel preview URLs
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# ---------------------------------------------------------------------------
+# Keep-Alive / Health Ping (no auth — prevents Render free tier cold starts)
+# ---------------------------------------------------------------------------
+@app.get("/ping")
+def ping():
+    """Lightweight keep-alive endpoint. Frontend pings this every 12 min."""
+    return {"status": "ok", "service": "SmartKirana"}
 
 model: GRUStockModel = None
 norm_dict: dict = {}
@@ -140,6 +148,16 @@ class UserCreate(BaseModel):
 
 class UserResponse(BaseModel):
     id: str; name: str; shopName: str; email: str
+
+class SendOTPRequest(BaseModel):
+    name: str
+    shopName: str
+    email: str
+    password: str
+
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp: str
 
 class InventoryItemSchema(BaseModel):
     id: Optional[int] = None
@@ -322,6 +340,103 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 @app.get("/auth/me", response_model=UserResponse)
 def get_me(current_user: dict = Depends(get_current_user)):
     return current_user
+
+@app.post("/auth/send-otp")
+def send_otp(req: SendOTPRequest, db: Session = Depends(get_db)):
+    """
+    Step 1 of OTP registration.
+    Validates inputs, stores a pending registration, and emails a 6-digit OTP.
+    """
+    email = req.email.strip().lower()
+
+    # Check if email is already fully registered
+    if db.query(UserDB).filter(UserDB.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered. Please log in instead.")
+
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+
+    otp = auth_utils.generate_otp()
+    expires_at = (datetime.utcnow() + timedelta(minutes=10)).isoformat()
+    hashed_pw  = auth_utils.get_password_hash(req.password)
+
+    # Upsert the pending registration (re-send if already pending)
+    existing = db.query(PendingRegistrationDB).filter(PendingRegistrationDB.email == email).first()
+    if existing:
+        existing.name           = req.name
+        existing.shopName       = req.shopName
+        existing.hashed_password = hashed_pw
+        existing.otp_code       = otp
+        existing.expires_at     = expires_at
+    else:
+        pending = PendingRegistrationDB(
+            name=req.name, shopName=req.shopName, email=email,
+            hashed_password=hashed_pw, otp_code=otp, expires_at=expires_at
+        )
+        db.add(pending)
+
+    db.commit()
+
+    # Send the OTP email (or print to console in dev mode)
+    auth_utils.send_otp_email(to_email=email, name=req.name, otp=otp)
+
+    return {"message": f"OTP sent to {email}. Please check your inbox.", "email": email}
+
+
+@app.post("/auth/verify-otp")
+def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
+    """
+    Step 2 of OTP registration.
+    Verifies the OTP, creates the user account, and returns a login token.
+    """
+    email = req.email.strip().lower()
+
+    pending = db.query(PendingRegistrationDB).filter(PendingRegistrationDB.email == email).first()
+    if not pending:
+        raise HTTPException(status_code=404, detail="No pending registration found. Please start again.")
+
+    # Check expiry
+    if datetime.utcnow() > datetime.fromisoformat(pending.expires_at):
+        db.delete(pending)
+        db.commit()
+        raise HTTPException(status_code=400, detail="OTP has expired. Please request a new one.")
+
+    # Check OTP match
+    if req.otp.strip() != pending.otp_code:
+        raise HTTPException(status_code=400, detail="Incorrect OTP. Please try again.")
+
+    # Double-check email isn't already registered (race condition guard)
+    if db.query(UserDB).filter(UserDB.email == email).first():
+        db.delete(pending)
+        db.commit()
+        raise HTTPException(status_code=400, detail="Email already registered. Please log in instead.")
+
+    # Create the real user account
+    new_user = UserDB(
+        id=str(int(time.time() * 1000)),
+        name=pending.name,
+        shopName=pending.shopName,
+        email=email,
+        hashed_password=pending.hashed_password,
+        createdAt=datetime.utcnow().isoformat()
+    )
+    db.add(new_user)
+    db.delete(pending)
+    db.commit()
+    db.refresh(new_user)
+
+    # Auto-login: issue JWT token
+    token = auth_utils.create_access_token(data={"sub": new_user.email})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": new_user.id,
+            "name": new_user.name,
+            "shopName": new_user.shopName,
+            "email": new_user.email
+        }
+    }
 
 # --- Dataset / Forecasting --------------------------------------------------
 
