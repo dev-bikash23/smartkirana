@@ -377,10 +377,19 @@ def send_otp(req: SendOTPRequest, db: Session = Depends(get_db)):
 
     db.commit()
 
-    # Send the OTP email (or print to console in dev mode)
-    auth_utils.send_otp_email(to_email=email, name=req.name, otp=otp)
+    # Try to send email; if no SMTP configured, return OTP in response for on-screen display
+    email_sent = auth_utils.send_otp_email(to_email=email, name=req.name, otp=otp)
+    smtp_configured = bool(auth_utils.SMTP_USER and auth_utils.SMTP_PASSWORD)
 
-    return {"message": f"OTP sent to {email}. Please check your inbox.", "email": email}
+    if smtp_configured:
+        return {"message": f"OTP sent to {email}. Please check your inbox.", "email": email}
+    else:
+        # Dev / no-email mode: return OTP directly so frontend shows it on screen
+        return {
+            "message": "OTP generated. No email service configured — your code is shown below.",
+            "email": email,
+            "dev_otp": otp   # frontend will display this prominently
+        }
 
 
 @app.post("/auth/verify-otp")

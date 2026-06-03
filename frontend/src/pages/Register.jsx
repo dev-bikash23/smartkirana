@@ -89,6 +89,7 @@ export default function Register() {
   // Step state
   const [step,      setStep]      = useState(1); // 1 = details, 2 = OTP
   const [otp,       setOtp]       = useState("");
+  const [devOtp,    setDevOtp]    = useState(""); // shown on screen when no email configured
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState("");
   const [resendCD,  setResendCD]  = useState(0);  // countdown seconds
@@ -115,7 +116,9 @@ export default function Register() {
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     setLoading(true);
     try {
-      await axios.post("/auth/send-otp", { name, shopName, email: email.trim().toLowerCase(), password });
+      const res = await axios.post("/auth/send-otp", { name, shopName, email: email.trim().toLowerCase(), password });
+      // If no email service configured, backend returns the OTP directly
+      if (res.data.dev_otp) setDevOtp(res.data.dev_otp);
       setStep(2);
       startCountdown();
     } catch (err) {
@@ -148,9 +151,11 @@ export default function Register() {
     if (resendCD > 0) return;
     setError("");
     setOtp("");
+    setDevOtp("");
     setLoading(true);
     try {
-      await axios.post("/auth/send-otp", { name, shopName, email: email.trim().toLowerCase(), password });
+      const res = await axios.post("/auth/send-otp", { name, shopName, email: email.trim().toLowerCase(), password });
+      if (res.data.dev_otp) setDevOtp(res.data.dev_otp);
       startCountdown();
     } catch (err) {
       setError(err.response?.data?.detail || "Failed to resend OTP.");
@@ -395,20 +400,54 @@ export default function Register() {
           <div style={{ textAlign: "center", marginBottom: 24 }}>
             <div style={{
               width: 72, height: 72, borderRadius: 22,
-              background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)",
-              border: "2px solid #BBF7D0",
+              background: devOtp ? "linear-gradient(135deg, #FFF7ED, #FFEDD5)" : "linear-gradient(135deg, #F0FDF4, #DCFCE7)",
+              border: devOtp ? "2px solid #FED7AA" : "2px solid #BBF7D0",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 32, margin: "0 auto 16px",
-              boxShadow: "0 4px 20px rgba(16,185,129,0.20)",
-            }}>📩</div>
+              boxShadow: devOtp ? "0 4px 20px rgba(251,146,60,0.20)" : "0 4px 20px rgba(16,185,129,0.20)",
+            }}>{devOtp ? "🔐" : "📩"}</div>
             <h2 style={{ fontSize: 22, fontWeight: 800, color: "#064E3B", margin: "0 0 8px", letterSpacing: "-0.3px" }}>
-              Check your email
+              {devOtp ? "Your verification code" : "Check your email"}
             </h2>
             <p style={{ color: "#6B7280", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
-              We sent a 6-digit verification code to<br />
-              <strong style={{ color: "#059669" }}>{email}</strong>
+              {devOtp
+                ? "Email service is not configured. Use the code below:"
+                : <>We sent a 6-digit verification code to<br /><strong style={{ color: "#059669" }}>{email}</strong></>
+              }
             </p>
           </div>
+
+          {/* ── On-screen OTP Banner (shown when no email service) ── */}
+          {devOtp && (
+            <div style={{
+              background: "linear-gradient(135deg, #FFF7ED, #FFEDD5)",
+              border: "2px solid #FED7AA",
+              borderRadius: 16, padding: "20px 24px",
+              marginBottom: 20, textAlign: "center",
+            }}>
+              <p style={{ color: "#92400E", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", margin: "0 0 12px" }}>
+                Your OTP Code
+              </p>
+              <p style={{
+                color: "#C2410C", fontSize: 44, fontWeight: 900,
+                letterSpacing: 14, margin: "0 0 14px",
+                fontFamily: "'Courier New', monospace",
+              }}>{devOtp}</p>
+              <button
+                type="button"
+                onClick={() => setOtp(devOtp)}
+                style={{
+                  background: "#EA580C", color: "#fff", border: "none",
+                  borderRadius: 10, padding: "8px 20px",
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                }}>
+                ✓ Auto-fill code
+              </button>
+              <p style={{ color: "#B45309", fontSize: 11, margin: "10px 0 0", opacity: 0.7 }}>
+                ⏱ Valid for 10 minutes · Set up SMTP to enable real email delivery
+              </p>
+            </div>
+          )}
 
           {error && (
             <div style={{
