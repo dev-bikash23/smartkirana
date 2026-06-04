@@ -455,6 +455,15 @@ export default function Inventory() {
     finally { setLoading(false); }
   };
 
+  // Silent refresh — updates data WITHOUT showing the loading spinner
+  // Used after discount apply so the badge stays visible immediately
+  const silentRefresh = async () => {
+    try {
+      const r = await axios.get(`${API}/inventory`);
+      setInventory(r.data);
+    } catch (e) { console.error(e); }
+  };
+
   const flash = (msg, type = "ok") => {
     setFlashMsg(msg); setFlashType(type);
     setTimeout(() => setFlashMsg(""), 4000);
@@ -538,8 +547,8 @@ export default function Inventory() {
         }));
         flash(`✅ ${pct}% discount applied for 7 days!`);
       }
-      // Silent background refresh to sync full server data
-      loadInventory();
+      // Silent background refresh — no spinner, badge stays visible
+      silentRefresh();
     } catch (err) {
       flash(err?.response?.data?.detail || err?.message || "Failed to apply discount.", "err");
     }
