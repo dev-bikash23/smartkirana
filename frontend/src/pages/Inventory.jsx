@@ -513,18 +513,36 @@ export default function Inventory() {
     try {
       if (pct <= 0) {
         await axios.post(`${API}/inventory/${id}/remove-discount`);
+        // Optimistic update — remove badge immediately
+        setInventory(prev => ({
+          ...prev,
+          products: prev.products.map(p =>
+            p.id === id ? { ...p, discount_pct: 0, discount_reason: "", discount_days_left: null } : p
+          )
+        }));
         flash("Discount removed.");
       } else {
-        // duration_type & duration_days required by backend
         await axios.post(`${API}/inventory/${id}/discount`, {
           discount_pct: pct,
           duration_type: "manual",
           duration_days: 7,
         });
+        // Optimistic update — show badge immediately without waiting for reload
+        setInventory(prev => ({
+          ...prev,
+          products: prev.products.map(p =>
+            p.id === id
+              ? { ...p, discount_pct: pct, discount_duration_days: 7, discount_days_left: 7 }
+              : p
+          )
+        }));
         flash(`✅ ${pct}% discount applied for 7 days!`);
       }
-      await loadInventory();
-    } catch (err) { flash(err?.response?.data?.detail || "Failed to update discount.", "err"); }
+      // Silent background refresh to sync full server data
+      loadInventory();
+    } catch (err) {
+      flash(err?.response?.data?.detail || err?.message || "Failed to apply discount.", "err");
+    }
   };
 
   const handleCSVUpload = async (e) => {
