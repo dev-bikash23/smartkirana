@@ -268,29 +268,119 @@ function ProductCard({ product, onDelete, onAdjust, onQR, onDiscount, onAI }) {
         </div>
       </div>
 
-      {/* Manual Discount Panel */}
+      {/* Manual Discount Panel — Premium Glowing Design */}
       {showDiscount && (
-        <div className="rounded-2xl p-3 space-y-2" style={{ background: "#FFF7ED", border: "1.5px solid #FED7AA" }}>
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-bold text-[#C2410C]">Set Discount</span>
-            <span className="text-sm font-black text-[#C2410C]">{discVal}%</span>
+        <div style={{
+          borderRadius: 18,
+          padding: 16,
+          background: "linear-gradient(135deg, #FFF1F2 0%, #FFF7ED 100%)",
+          border: "1.5px solid #FECACA",
+          boxShadow: "0 4px 20px rgba(225,29,72,0.12)",
+        }}>
+          {/* Header row */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#9F1239", textTransform: "uppercase", letterSpacing: 1 }}>🏷️ Set Discount</span>
+            <span style={{
+              fontSize: 20, fontWeight: 900, color: "#E11D48",
+              background: "#FFE4E6", padding: "2px 12px", borderRadius: 10,
+              border: "1.5px solid #FECACA", lineHeight: 1.4,
+            }}>{discVal}% OFF</span>
           </div>
-          <input type="range" min="0" max="90" value={discVal} onChange={e => setDiscVal(Number(e.target.value))}
-            className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-orange-200 dark:bg-slate-700 focus:outline-none" style={{ accentColor: "#E11D48" }} />
-          <div className="flex gap-2">
-            <button onClick={handleSetDiscount} className="flex-1 py-1.5 text-xs rounded-xl font-bold bg-[#E11D48] text-white hover:bg-[#BE123C] transition-all">
-              Apply {discVal}%
+
+          {/* Quick preset buttons */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 5, marginBottom: 12 }}>
+            {[10, 20, 30, 50].map(p => (
+              <button key={p} type="button" onClick={() => setDiscVal(p)}
+                style={{
+                  padding: "6px 2px", borderRadius: 10, fontSize: 11, fontWeight: 800,
+                  border: discVal === p ? "1.5px solid #E11D48" : "1.5px solid #FECACA",
+                  background: discVal === p ? "#E11D48" : "#FFF1F2",
+                  color: discVal === p ? "#fff" : "#C2410C",
+                  cursor: "pointer", transition: "all 0.15s",
+                }}>{p}%</button>
+            ))}
+          </div>
+
+          {/* Glowing gradient slider */}
+          <div style={{ position: "relative", marginBottom: 12 }}>
+            <input
+              type="range" min="1" max="90" value={discVal}
+              onChange={e => setDiscVal(Number(e.target.value))}
+              style={{
+                width: "100%", height: 8, borderRadius: 8,
+                outline: "none", cursor: "pointer",
+                WebkitAppearance: "none", appearance: "none",
+                background: `linear-gradient(to right,
+                  #E11D48 0%,
+                  #F97316 ${discVal}%,
+                  #FED7AA ${discVal}%,
+                  #FED7AA 100%)`,
+                boxShadow: `0 0 10px rgba(225,29,72,${discVal / 150})`,
+                transition: "box-shadow 0.2s",
+              }}
+            />
+            <style>{`
+              input[type=range]::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                width: 22px; height: 22px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #E11D48, #F97316);
+                border: 3px solid white;
+                box-shadow: 0 0 12px rgba(225,29,72,0.6), 0 2px 6px rgba(0,0,0,0.15);
+                cursor: pointer;
+                transition: all 0.15s;
+              }
+              input[type=range]::-webkit-slider-thumb:hover {
+                box-shadow: 0 0 20px rgba(225,29,72,0.8), 0 2px 8px rgba(0,0,0,0.2);
+                transform: scale(1.15);
+              }
+              input[type=range]::-moz-range-thumb {
+                width: 22px; height: 22px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #E11D48, #F97316);
+                border: 3px solid white;
+                box-shadow: 0 0 12px rgba(225,29,72,0.6);
+                cursor: pointer;
+              }
+            `}</style>
+          </div>
+
+          {/* Live price preview */}
+          <div style={{
+            marginBottom: 12, padding: "8px 12px", borderRadius: 10,
+            background: "rgba(225,29,72,0.06)", border: "1px solid #FECACA",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            <span style={{ fontSize: 11, color: "#9F1239", fontWeight: 600 }}>Sale Price</span>
+            <span style={{ fontSize: 14, fontWeight: 900, color: "#E11D48" }}>
+              <s style={{ color: "#9CA3AF", fontSize: 11, fontWeight: 400 }}>₹{product.price}</s>
+              {" "}₹{(product.price * (1 - discVal / 100)).toFixed(0)}
+            </span>
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleSetDiscount}
+              style={{
+                flex: 2, padding: "10px", borderRadius: 12, fontSize: 12, fontWeight: 800,
+                background: "linear-gradient(135deg, #E11D48, #F97316)",
+                color: "#fff", border: "none", cursor: "pointer",
+                boxShadow: "0 4px 14px rgba(225,29,72,0.35)",
+              }}>
+              ⚡ Apply {discVal}% Discount
             </button>
             {product.discount_pct > 0 && (
               <button onClick={() => { onDiscount(product.id, 0); setShowDiscount(false); }}
-                className="px-3 py-1.5 text-xs rounded-xl font-bold bg-white text-[#475569] border border-[#E8EDFF] hover:bg-[#F8FAFC] transition-all">
-                Remove
-              </button>
+                style={{
+                  flex: 1, padding: "10px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+                  background: "#fff", border: "1.5px solid #E5E7EB", color: "#6B7280", cursor: "pointer",
+                }}>Remove</button>
             )}
             <button onClick={() => setShowDiscount(false)}
-              className="px-3 py-1.5 text-xs rounded-xl font-bold bg-white text-[#475569] border border-[#E8EDFF] hover:bg-[#F8FAFC] transition-all">
-              Cancel
-            </button>
+              style={{
+                flex: 1, padding: "10px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+                background: "#fff", border: "1.5px solid #E5E7EB", color: "#6B7280", cursor: "pointer",
+              }}>Cancel</button>
           </div>
         </div>
       )}
@@ -425,11 +515,16 @@ export default function Inventory() {
         await axios.post(`${API}/inventory/${id}/remove-discount`);
         flash("Discount removed.");
       } else {
-        await axios.post(`${API}/inventory/${id}/discount`, { discount_pct: pct });
-        flash(`${pct}% discount applied!`);
+        // duration_type & duration_days required by backend
+        await axios.post(`${API}/inventory/${id}/discount`, {
+          discount_pct: pct,
+          duration_type: "manual",
+          duration_days: 7,
+        });
+        flash(`✅ ${pct}% discount applied for 7 days!`);
       }
       await loadInventory();
-    } catch { flash("Failed to update discount.", "err"); }
+    } catch (err) { flash(err?.response?.data?.detail || "Failed to update discount.", "err"); }
   };
 
   const handleCSVUpload = async (e) => {
